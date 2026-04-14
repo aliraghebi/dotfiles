@@ -1,0 +1,470 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Resolve DOTFILES_DIR from this script's own location, following symlinks.
+# Works on macOS (no readlink -f) and Linux.
+# ---------------------------------------------------------------------------
+_resolve_dir() {
+  local src="$1"
+  local dir
+  while [[ -L "$src" ]]; do
+    dir=$(cd "$(dirname "$src")" && pwd)
+    src=$(readlink "$src")
+    if [[ "$src" != /* ]]; then
+      src="$dir/$src"
+    fi
+  done
+  cd "$(dirname "$src")" && pwd
+}
+
+DOTFILES_DIR="$(_resolve_dir "${BASH_SOURCE[0]}")"
+# bin/ is one level down from root
+DOTFILES_DIR="$(dirname "$DOTFILES_DIR")"
+export DOTFILES_DIR
+
+# ---------------------------------------------------------------------------
+# Source lib files
+# ---------------------------------------------------------------------------
+# shellcheck source=lib/log.sh
+source "$DOTFILES_DIR/lib/log.sh"
+# shellcheck source=lib/os.sh
+source "$DOTFILES_DIR/lib/os.sh"
+# shellcheck source=lib/utils.sh
+source "$DOTFILES_DIR/lib/utils.sh"
+# shellcheck source=lib/pkg.sh
+source "$DOTFILES_DIR/lib/pkg.sh"
+# shellcheck source=lib/link.sh
+source "$DOTFILES_DIR/lib/link.sh"
+# shellcheck source=lib/state.sh
+source "$DOTFILES_DIR/lib/state.sh"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_usage() {
+  cat <<EOF
+Usage: dotfiles <command> [app]
+
+Commands:
+  install <app>   Install and configure an app
+  config  <app>   Configure an app (must already be installed)
+  remove  <app>   Remove an app's config links
+  update          Pull latest dotfiles from git
+  list            List all apps and their status
+EOF
+}
+
+_load_app() {
+  local app="$1"
+  local meta="$DOTFILES_DIR/apps/$app/meta.sh"
+  if [[ ! -f "$meta" ]]; then
+    error "Unknown app: $app (no meta.sh found at $meta)"
+    exit 1
+  fi
+
+  # Safe defaults
+  APP_OS="macos,linux"
+  APP_BINARY=""
+  APP_DESCRIPTION=""
+  CONFIGS=()
+
+  source "$meta"
+
+  export APP_DIR="$DOTFILES_DIR/apps/$app"
+  export APP_CONF_DIR="$DOTFILES_DIR/apps/$app/config"
+}
+
+_os_guard() {
+  local app="$1"
+  local current_os
+  current_os=$(os_name)
+  if [[ "$APP_OS" == "macos" && "$current_os" != "macos" ]]; then
+    info "Skipping $app — macOS only"
+    exit 0
+  fi
+  if [[ "$APP_OS" == "linux" && "$current_os" != "linux" ]]; then
+    info "Skipping $app — Linux only"
+    exit 0
+  fi
+}
+
+# _filter_configs <app> — filters CONFIGS for current OS, echoes "src:dst" lines
+_filter_configs() {
+  local current_os
+  current_os=$(os_name)
+  local entry
+  for entry in "${CONFIGS[@]+"${CONFIGS[@]}"}"; do
+    # Parse: "src : dst" or "src : dst : os_tag"
+    local src dst os_tag
+    src=$(echo "$entry" | awk -F' : ' '{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1}')
+    dst=$(echo "$entry" | awk -F' : ' '{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2}')
+    os_tag=$(echo "$entry" | awk -F' : ' '{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $3); print $3}')
+
+    # Skip if OS tag doesn't match
+    if [[ -n "$os_tag" && "$os_tag" != "$current_os" ]]; then
+      continue
+    fi
+
+    # Expand ~ in dst
+    dst="${dst/#\~/$HOME}"
+
+    # Resolve src to absolute path (relative to APP_DIR)
+    if [[ "$src" != /* ]]; then
+      src="$APP_DIR/$src"
+    fi
+
+    echo "${src}::${dst}"
+  done
+}
+
+# _reconcile_links <app> — create/remove symlinks to match desired CONFIGS
+_reconcile_links() {
+  local app="$1"
+
+  # Build desired set as newline-separated "src::dst" entries
+  local desired=()
+  local entry
+  while IFS= read -r entry; do
+    [[ -n "$entry" ]] && desired+=("$entry")
+  done < <(_filter_configs)
+
+  # Build desired dst set for fast lookup
+  local desired_dsts=()
+  for entry in "${desired[@]+"${desired[@]}"}"; do
+    local dst="${entry##*::}"
+    desired_dsts+=("$dst")
+  done
+
+  # Remove links no longer in desired set
+  local links_json
+  links_json=$(state_get_links "$app")
+  local link_dst link_src
+
+  while IFS= read -r link_entry; do
+    link_dst=$(echo "$link_entry" | jq -r '.dst')
+    link_src=$(echo "$link_entry" | jq -r '.src')
+
+    # Check if dst is in desired set
+    local found=false
+    local d
+    for d in "${desired_dsts[@]+"${desired_dsts[@]}"}"; do
+      if [[ "$d" == "$link_dst" ]]; then
+        found=true
+        break
+      fi
+    done
+
+    if [[ "$found" == false ]]; then
+      info "Removing stale link: $link_dst"
+      safe_unlink "$link_dst"
+      state_remove_link "$app" "$link_dst"
+
+      # Revert backup if one exists
+      local backups_json backup_entry backup_path
+      backups_json=$(state_get_backups "$app")
+      while IFS= read -r backup_entry; do
+        local orig bak
+        orig=$(echo "$backup_entry" | jq -r '.original')
+        bak=$(echo "$backup_entry" | jq -r '.backup')
+        if [[ "$orig" == "$link_dst" && -f "$bak" ]]; then
+          info "Reverting backup $bak → $orig"
+          mv "$bak" "$orig"
+          state_remove_backup "$app" "$orig"
+        fi
+      done < <(echo "$backups_json" | jq -c '.[]' 2>/dev/null || true)
+    fi
+  done < <(echo "$links_json" | jq -c '.[]' 2>/dev/null || true)
+
+  # Create links in desired set that don't already exist
+  for entry in "${desired[@]+"${desired[@]}"}"; do
+    local src="${entry%%::*}"
+    local dst="${entry##*::}"
+
+    # Check if already in state
+    local current_links
+    current_links=$(state_get_links "$app")
+    local already=false
+    while IFS= read -r link_entry; do
+      local ld
+      ld=$(echo "$link_entry" | jq -r '.dst')
+      if [[ "$ld" == "$dst" ]]; then
+        already=true
+        break
+      fi
+    done < <(echo "$current_links" | jq -c '.[]' 2>/dev/null || true)
+
+    # Create the symlink (safe_link handles re-linking existing symlinks)
+    local backup
+    backup=$(safe_link "$src" "$dst")
+
+    if [[ -n "$backup" ]]; then
+      state_add_backup "$app" "$dst" "$backup"
+    fi
+
+    if [[ "$already" == false ]]; then
+      state_add_link "$app" "$src" "$dst"
+    fi
+  done
+}
+
+# _run_install_dispatch <app> — runs install.sh dispatch logic
+_run_install_dispatch() {
+  local app="$1"
+  local install_script="$APP_DIR/install.sh"
+
+  if [[ ! -f "$install_script" ]]; then
+    return 0
+  fi
+
+  # Source install.sh to get function definitions
+  # Unset any previously defined functions first
+  unset -f install_brew install_apt install_pacman install 2>/dev/null || true
+  source "$install_script"
+
+  local ran=false
+
+  # Step 1: brew
+  if declare -f install_brew >/dev/null 2>&1 && is_brew; then
+    install_brew
+    ran=true
+  fi
+
+  # Step 2: pacman (only if brew didn't run)
+  if [[ "$ran" == false ]]; then
+    if declare -f install_pacman >/dev/null 2>&1 && is_pacman; then
+      install_pacman
+      ran=true
+    fi
+  fi
+
+  # Step 3: apt (only if nothing above ran)
+  if [[ "$ran" == false ]]; then
+    if declare -f install_apt >/dev/null 2>&1 && is_apt; then
+      install_apt
+      ran=true
+    fi
+  fi
+
+  # Step 4: install (always, after package manager step)
+  if declare -f install >/dev/null 2>&1; then
+    install
+    ran=true
+  fi
+
+  if [[ "$ran" == false ]]; then
+    error "install.sh exists but no install method ran for $app"
+    exit 1
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+
+cmd_install() {
+  local app="$1"
+  _load_app "$app"
+  _os_guard "$app"
+
+  step "Installing $app"
+
+  state_set_status "$app" "configuring"
+
+  # Run install dispatch
+  _run_install_dispatch "$app"
+
+  # Reconcile config links
+  _reconcile_links "$app"
+
+  # Run config.sh if present
+  local config_script="$APP_DIR/config.sh"
+  if [[ -f "$config_script" ]]; then
+    step "Configuring $app"
+    source "$config_script"
+  fi
+
+  state_set_configured "$app"
+  ok "$app installed and configured"
+}
+
+cmd_config() {
+  local app="$1"
+  _load_app "$app"
+  _os_guard "$app"
+
+  step "Configuring $app"
+
+  # Binary check (skip if APP_BINARY is empty)
+  if [[ -n "$APP_BINARY" ]]; then
+    if ! command_exists "$APP_BINARY"; then
+      error "$APP_BINARY is not installed. Run: dotfiles install $app"
+      exit 1
+    fi
+  fi
+
+  # Reconcile config links
+  _reconcile_links "$app"
+
+  # Run config.sh if present
+  local config_script="$APP_DIR/config.sh"
+  if [[ -f "$config_script" ]]; then
+    source "$config_script"
+  fi
+
+  state_set_configured "$app"
+  ok "$app configured"
+}
+
+cmd_remove() {
+  local app="$1"
+  _load_app "$app"
+
+  step "Removing $app"
+
+  state_set_status "$app" "removing"
+
+  # Remove all tracked symlinks and revert backups
+  local links_json
+  links_json=$(state_get_links "$app")
+
+  while IFS= read -r link_entry; do
+    local dst
+    dst=$(echo "$link_entry" | jq -r '.dst')
+    safe_unlink "$dst"
+    state_remove_link "$app" "$dst"
+
+    # Revert backup if exists
+    local backups_json
+    backups_json=$(state_get_backups "$app")
+    while IFS= read -r backup_entry; do
+      local orig bak
+      orig=$(echo "$backup_entry" | jq -r '.original')
+      bak=$(echo "$backup_entry" | jq -r '.backup')
+      if [[ "$orig" == "$dst" && -f "$bak" ]]; then
+        info "Reverting backup $bak → $orig"
+        mv "$bak" "$orig"
+        state_remove_backup "$app" "$orig"
+      fi
+    done < <(echo "$backups_json" | jq -c '.[]' 2>/dev/null || true)
+  done < <(echo "$links_json" | jq -c '.[]' 2>/dev/null || true)
+
+  # Run remove.sh if present
+  local remove_script="$APP_DIR/remove.sh"
+  if [[ -f "$remove_script" ]]; then
+    source "$remove_script"
+  fi
+
+  state_remove_app "$app"
+  ok "$app removed"
+}
+
+cmd_update() {
+  step "Updating dotfiles"
+  cd "$DOTFILES_DIR"
+  git pull
+  ok "Dotfiles updated. Run 'dotfiles config <app>' for each app you want to refresh."
+}
+
+cmd_list() {
+  local apps_dir="$DOTFILES_DIR/apps"
+  if [[ ! -d "$apps_dir" ]]; then
+    info "No apps found"
+    return 0
+  fi
+
+  local current_os
+  current_os=$(os_name)
+
+  printf "\n%-18s %-16s %-22s %s\n" "APP" "OS" "STATUS" "DESCRIPTION"
+  printf "%-18s %-16s %-22s %s\n" "---" "--" "------" "-----------"
+
+  local app
+  for app_dir in "$apps_dir"/*/; do
+    [[ -d "$app_dir" ]] || continue
+    app=$(basename "$app_dir")
+    local meta="$app_dir/meta.sh"
+    [[ -f "$meta" ]] || continue
+
+    # Load meta (reset defaults first)
+    APP_OS="macos,linux"
+    APP_BINARY=""
+    APP_DESCRIPTION=""
+    CONFIGS=()
+    source "$meta"
+
+    # OS tag
+    local os_tag
+    case "$APP_OS" in
+      macos) os_tag="macOS Only" ;;
+      linux) os_tag="Linux Only" ;;
+      *)     os_tag="macOS, Linux" ;;
+    esac
+
+    # Status from state
+    local status
+    status=$(state_get_status "$app")
+    if [[ -z "$status" ]]; then
+      status="not_configured"
+    fi
+
+    # Pad status label to a fixed visual width (20 chars) so description
+    # column stays aligned despite invisible color escape codes.
+    local status_display fix_hint=""
+    case "$status" in
+      configured)
+        status_display="${_GREEN}✓ Configured        ${_RESET}"
+        ;;
+      removing)
+        status_display="${_YELLOW}⚠ Incomplete        ${_RESET}"
+        fix_hint="  → Run: dotfiles remove $app"
+        ;;
+      *)
+        status_display="${_RED}✗ Not Configured    ${_RESET}"
+        ;;
+    esac
+
+    printf "%-18s %-16s ${status_display}  %s\n" "$app" "$os_tag" "${APP_DESCRIPTION:-}"
+    if [[ -n "$fix_hint" ]]; then
+      printf "%s\n" "$fix_hint"
+    fi
+  done
+  printf "\n"
+}
+
+# ---------------------------------------------------------------------------
+# Main dispatch
+# ---------------------------------------------------------------------------
+
+CMD="${1:-}"
+APP="${2:-}"
+
+case "$CMD" in
+  install)
+    [[ -n "$APP" ]] || { error "Usage: dotfiles install <app>"; exit 1; }
+    cmd_install "$APP"
+    ;;
+  config)
+    [[ -n "$APP" ]] || { error "Usage: dotfiles config <app>"; exit 1; }
+    cmd_config "$APP"
+    ;;
+  remove)
+    [[ -n "$APP" ]] || { error "Usage: dotfiles remove <app>"; exit 1; }
+    cmd_remove "$APP"
+    ;;
+  update)
+    cmd_update
+    ;;
+  list)
+    cmd_list
+    ;;
+  help|--help|-h|"")
+    _usage
+    ;;
+  *)
+    error "Unknown command: $CMD"
+    _usage
+    exit 1
+    ;;
+esac
