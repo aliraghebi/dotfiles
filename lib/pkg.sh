@@ -92,26 +92,64 @@ require_pacman() {
   sudo pacman -S --noconfirm "$pkg"
 }
 
+# require_gh_release <owner/repo> <binary> [asset_template]
+# Without asset_template: auto-detects asset by OS name, installs binary to ~/.local/bin.
+# With asset_template: evaluates the template with $version set from the latest release tag,
+#   installs .deb via dpkg or drops a plain binary into ~/.local/bin.
+# Examples:
+#   require_gh_release "cli/cli" "gh"
+#   require_gh_release "gopasspw/gopass" "gopass" 'gopass_${version#v}_linux_amd64.deb'
 require_gh_release() {
   local repo="$1"
-  local bin="$2"
-  local dest="$HOME/.local/bin/$bin"
-  if [[ -f "$dest" ]]; then
-    info "$bin already installed at $dest"
+  local binary="$2"
+  local asset_tpl="${3:-}"
+
+  if command_exists "$binary"; then
+    info "$binary already installed"
     return 0
   fi
-  info "Downloading $bin from $repo latest release"
-  local url
-  url=$(curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" \
-    | jq -r ".assets[] | select(.name | contains(\"$(uname -s | tr '[:upper:]' '[:lower:]')\")) | .browser_download_url" \
-    | head -1)
+
+  info "Installing $binary from $repo latest release"
+
+  local version asset url tmp
+  version=$(curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" \
+    | jq -r '.tag_name')
+
+  if [[ -z "$version" ]]; then
+    error "Could not determine latest $binary version"
+    return 1
+  fi
+
+  if [[ -n "$asset_tpl" ]]; then
+    asset=$(eval echo "$asset_tpl")
+    url="https://github.com/${repo}/releases/download/${version}/${asset}"
+  else
+    url=$(curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" \
+      | jq -r ".assets[] | select(.name | contains(\"$(uname -s | tr '[:upper:]' '[:lower:]')\")) | .browser_download_url" \
+      | head -1)
+    asset=$(basename "$url")
+  fi
+
   if [[ -z "$url" ]]; then
     error "Could not find release asset for $repo"
     return 1
   fi
-  ensure_dir "$HOME/.local/bin"
-  download_file "$url" "$dest"
-  chmod +x "$dest"
+
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' RETURN
+
+  info "Downloading ${asset}"
+  curl -fsSL -o "${tmp}/${asset}" "${url}"
+
+  if [[ "$asset" == *.deb ]]; then
+    sudo dpkg -i "${tmp}/${asset}"
+  else
+    ensure_dir "$HOME/.local/bin"
+    mv "${tmp}/${asset}" "$HOME/.local/bin/$binary"
+    chmod +x "$HOME/.local/bin/$binary"
+  fi
+
+  ok "$binary installed"
 }
 
 require_script() {

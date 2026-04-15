@@ -78,6 +78,8 @@ _load_app() {
 }
 
 _check_deps() {
+  local app="$1"
+
   local dep
   local yes_to_all=false
   for dep in "${APP_DEPS[@]+"${APP_DEPS[@]}"}"; do
@@ -95,25 +97,9 @@ _check_deps() {
         fi
       fi
 
-      # Save current app context — cmd_install overwrites APP_* globals
-      local _saved_os="$APP_OS"
-      local _saved_binary="$APP_BINARY"
-      local _saved_desc="$APP_DESCRIPTION"
-      local _saved_dir="$APP_DIR"
-      local _saved_conf_dir="$APP_CONF_DIR"
-      local _saved_configs=("${APP_CONFIGS[@]+"${APP_CONFIGS[@]}"}")
-      local _saved_deps=("${APP_DEPS[@]+"${APP_DEPS[@]}"}")
-
       cmd_install "$dep"
 
-      # Restore
-      APP_OS="$_saved_os"
-      APP_BINARY="$_saved_binary"
-      APP_DESCRIPTION="$_saved_desc"
-      APP_DIR="$_saved_dir"
-      APP_CONF_DIR="$_saved_conf_dir"
-      APP_CONFIGS=("${_saved_configs[@]+"${_saved_configs[@]}"}")
-      APP_DEPS=("${_saved_deps[@]+"${_saved_deps[@]}"}")
+      _load_app $app
     fi
   done
 }
@@ -309,7 +295,7 @@ cmd_install() {
   local app="$1"
   _load_app "$app"
   _os_guard "$app"
-  _check_deps
+  _check_deps "$app"
 
   step "Installing $app"
 
@@ -336,7 +322,7 @@ cmd_config() {
   local app="$1"
   _load_app "$app"
   _os_guard "$app"
-  _check_deps
+  _check_deps "$app"
 
   step "Configuring $app"
 

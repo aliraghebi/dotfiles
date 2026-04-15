@@ -1,12 +1,3 @@
-# Project-specific ignores only — global rules are in apps/git/config/ignore
-
-# Codex local configuration
-.codex/
-
-# Claude Flow runtime data
-.claude-flow/data/
-.claude-flow/logs/
-
 # Environment variables
 .env
 .env.local

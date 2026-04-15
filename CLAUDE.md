@@ -178,7 +178,7 @@ require_apt         <pkg>
 require_cargo       <crate>
 require_go          <module>
 require_pip         <pkg>
-require_gh_release  <owner/repo> <binary_name>
+require_gh_release  <owner/repo> <binary_name> [asset_template]
 require_script      <url>
 ```
 
