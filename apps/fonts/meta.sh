@@ -2,4 +2,4 @@
 APP_OS="macos,linux"
 APP_BINARY=""
 APP_DESCRIPTION="System fonts — JetBrains Mono, Fira Code, Nerd Fonts, Vazirmatn"
-CONFIGS=()
+APP_CONFIGS=()

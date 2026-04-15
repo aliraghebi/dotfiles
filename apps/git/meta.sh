@@ -2,7 +2,7 @@
 APP_OS="macos,linux"
 APP_BINARY="git"
 APP_DESCRIPTION="Git version control"
-CONFIGS=(
+APP_CONFIGS=(
   "config/config : ~/.config/git/config"
   "config/ignore : ~/.config/git/ignore"
 )

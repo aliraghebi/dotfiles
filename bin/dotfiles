@@ -68,12 +68,54 @@ _load_app() {
   APP_OS="macos,linux"
   APP_BINARY=""
   APP_DESCRIPTION=""
-  CONFIGS=()
+  APP_DEPS=()
+  APP_CONFIGS=()
 
   source "$meta"
 
   export APP_DIR="$DOTFILES_DIR/apps/$app"
   export APP_CONF_DIR="$DOTFILES_DIR/apps/$app/config"
+}
+
+_check_deps() {
+  local dep
+  local yes_to_all=false
+  for dep in "${APP_DEPS[@]+"${APP_DEPS[@]}"}"; do
+    if ! command_exists "$dep"; then
+      warn "Missing dependency: '$dep' is required but not installed."
+      if [[ "$yes_to_all" == false ]]; then
+        local reply
+        printf "  Install '$dep' now via dotfiles? [y/N/a] "
+        read -r reply
+        if [[ "$reply" =~ ^[Aa]$ ]]; then
+          yes_to_all=true
+        elif [[ ! "$reply" =~ ^[Yy]$ ]]; then
+          error "Aborted: '$dep' is required."
+          exit 1
+        fi
+      fi
+
+      # Save current app context — cmd_install overwrites APP_* globals
+      local _saved_os="$APP_OS"
+      local _saved_binary="$APP_BINARY"
+      local _saved_desc="$APP_DESCRIPTION"
+      local _saved_dir="$APP_DIR"
+      local _saved_conf_dir="$APP_CONF_DIR"
+      local _saved_configs=("${APP_CONFIGS[@]+"${APP_CONFIGS[@]}"}")
+      local _saved_deps=("${APP_DEPS[@]+"${APP_DEPS[@]}"}")
+
+      cmd_install "$dep"
+
+      # Restore
+      APP_OS="$_saved_os"
+      APP_BINARY="$_saved_binary"
+      APP_DESCRIPTION="$_saved_desc"
+      APP_DIR="$_saved_dir"
+      APP_CONF_DIR="$_saved_conf_dir"
+      APP_CONFIGS=("${_saved_configs[@]+"${_saved_configs[@]}"}")
+      APP_DEPS=("${_saved_deps[@]+"${_saved_deps[@]}"}")
+    fi
+  done
 }
 
 _os_guard() {
@@ -90,12 +132,12 @@ _os_guard() {
   fi
 }
 
-# _filter_configs <app> — filters CONFIGS for current OS, echoes "src:dst" lines
+# _filter_configs <app> — filters APP_CONFIGS for current OS, echoes "src:dst" lines
 _filter_configs() {
   local current_os
   current_os=$(os_name)
   local entry
-  for entry in "${CONFIGS[@]+"${CONFIGS[@]}"}"; do
+  for entry in "${APP_CONFIGS[@]+"${APP_CONFIGS[@]}"}"; do
     # Parse: "src : dst" or "src : dst : os_tag"
     local src dst os_tag
     src=$(echo "$entry" | awk -F' : ' '{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1}')
@@ -267,6 +309,7 @@ cmd_install() {
   local app="$1"
   _load_app "$app"
   _os_guard "$app"
+  _check_deps
 
   step "Installing $app"
 
@@ -293,6 +336,7 @@ cmd_config() {
   local app="$1"
   _load_app "$app"
   _os_guard "$app"
+  _check_deps
 
   step "Configuring $app"
 
@@ -391,7 +435,7 @@ cmd_list() {
     APP_OS="macos,linux"
     APP_BINARY=""
     APP_DESCRIPTION=""
-    CONFIGS=()
+    APP_CONFIGS=()
     source "$meta"
 
     # OS tag
