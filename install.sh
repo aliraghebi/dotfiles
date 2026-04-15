@@ -5,7 +5,7 @@ set -euo pipefail
 # Works both when curled remotely and when run locally from the repo.
 #
 # Remote usage:
-#   sudo bash -c "$(curl -sL https://github.com/aliraghebiii/dotfiles/raw/main/install.sh)" @ install
+#   sudo bash -c "$(curl -sL https://github.com/aliraghebi/dotfiles/raw/main/install.sh)" @ install
 #
 # Local usage:
 #   bash install.sh
