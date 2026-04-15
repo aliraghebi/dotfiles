@@ -18,7 +18,16 @@ require_brew_cask() {
     return 0
   fi
   info "Installing $pkg via brew cask"
-  brew install --cask "$pkg"
+  local output
+  if ! output=$(brew install --cask "$pkg" 2>&1); then
+    if echo "$output" | grep -q "there is already"; then
+      warn "$pkg: files already exist on disk, skipping"
+      return 0
+    fi
+    echo "$output" >&2
+    return 1
+  fi
+  echo "$output"
 }
 
 require_brew_tap() {
