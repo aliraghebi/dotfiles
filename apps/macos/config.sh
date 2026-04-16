@@ -137,3 +137,11 @@ killall Finder 2>/dev/null || true
 killall Dock 2>/dev/null || true
 
 ok "macOS defaults applied"
+
+if ! command_exists brew; then
+  printf "  Install Homebrew now? [y/N] "
+  read -r _brew_reply
+  if [[ "$_brew_reply" =~ ^[Yy]$ ]]; then
+    cmd_install brew
+  fi
+fi

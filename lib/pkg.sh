@@ -154,6 +154,7 @@ require_gh_release() {
 
 require_script() {
   local url="$1"
+  local interpreter="${2:-sh}"
   info "Running install script from $url"
-  curl -fsSL "$url" | sh
+  curl -fsSL "$url" | "$interpreter"
 }

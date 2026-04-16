@@ -51,15 +51,18 @@ test_require_brew_cask_skips_when_already_installed() {
 }
 
 test_require_brew_cask_installs_when_missing() {
-  local installed=false
+  local tmp
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' RETURN
+  local marker="$tmp/installed"
   brew() {
     if [[ "$1" == "list" ]]; then return 1; fi
-    if [[ "$1" == "install" ]]; then installed=true; return 0; fi
+    if [[ "$1" == "install" ]]; then touch "$marker"; return 0; fi
   }
   export -f brew
   require_brew_cask "some-cask"
   unset -f brew
-  assert_equals "true" "$installed"
+  assert_file_exists "$marker"
 }
 
 # ── require_apt idempotency ──
@@ -112,6 +115,32 @@ test_require_cargo_installs_when_missing() {
   require_cargo "ripgrep"
   unset -f command_exists cargo
   assert_equals "true" "$installed"
+}
+
+# ── require_script ──
+
+test_require_script_uses_sh_by_default() {
+  local tmp
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' RETURN
+  local marker="$tmp/ran"
+  curl() { echo "touch \"$marker\""; }
+  export -f curl
+  require_script "https://example.com/install.sh"
+  unset -f curl
+  assert_file_exists "$marker"
+}
+
+test_require_script_uses_custom_interpreter() {
+  local tmp
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' RETURN
+  local marker="$tmp/ran"
+  curl() { echo "touch \"$marker\""; }
+  export -f curl
+  require_script "https://example.com/install.sh" /bin/bash
+  unset -f curl
+  assert_file_exists "$marker"
 }
 
 run_tests

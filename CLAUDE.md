@@ -1,46 +1,23 @@
 # Project Reference — dotfiles CLI
 
-Personal dotfiles manager for macOS and Ubuntu/Linux. The repo is cloned to
-`~/.dotfiles` and provides a single CLI entry point at `bin/dotfiles`.
-
-### Quick install
-
-```bash
-sudo bash -c "$(curl -sL https://github.com/aliraghebiii/dotfiles/raw/main/install.sh)" @ install
-```
-
----
-
-## What is already implemented
-
-The entire framework is complete and working:
-
-- `bin/dotfiles` — full CLI dispatcher for all five commands
-- `lib/log.sh` — `info`, `ok`, `warn`, `error`, `step`
-- `lib/os.sh` — `is_macos`, `is_linux`, `os_name`, `linux_distro`, `is_brew`, `is_apt`, `dotfiles_state_file`
-- `lib/utils.sh` — `command_exists`, `ensure_dir`, `download_file`, `add_line_to_file`, `is_ci`
-- `lib/pkg.sh` — all `require_*` helpers
-- `lib/link.sh` — `safe_link`, `safe_unlink`
-- `lib/state.sh` — all state read/write functions via `jq`
-- `install.sh` — full bootstrap (installs deps, clones repo to ~/.dotfiles, symlinks CLI)
-- `apps/git` — config-only example
-- `apps/zsh` — full example with install + config
-- `apps/tmux` — example with config.sh and remove.sh
-- `apps/macos` — config-only with config.sh
-
-New work is **adding apps** and **fixing bugs** in the framework.
+Personal dotfiles manager. Supports **macOS** and **Ubuntu/Linux** today; more
+targets (Arch, Windows, ...) may land later — keep OS-specific logic behind
+`lib/os.sh` so new OSes plug in cleanly. Cloned to `~/.dotfiles`; single CLI at
+`bin/dotfiles`. The framework is stable — typical work is **adding apps**,
+**adding features**, **fixing bugs**. `lib/` / `bin/` changes are fine when a
+feature needs them; hold the clean-code bar and add tests for any `lib/` change.
 
 ---
 
 ## Commands
 
-| Command | What it does |
+| Command | Behaviour |
 |---|---|
-| `dotfiles install <app>` | Run install dispatch → reconcile links → run config.sh |
-| `dotfiles config <app>` | Reconcile links → run config.sh (verifies binary first) |
-| `dotfiles remove <app>` | Remove links → revert backups → run remove.sh |
-| `dotfiles update` | `git pull` only — user runs config manually after |
-| `dotfiles list` | Show all apps with OS tag and configured status |
+| `dotfiles install <app>` | install dispatch → reconcile links → `config.sh` |
+| `dotfiles config <app>`  | verify `APP_BINARY` → reconcile links → `config.sh` |
+| `dotfiles remove <app>`  | unlink → revert backups → `remove.sh` |
+| `dotfiles update`        | `git pull` only |
+| `dotfiles list`          | all apps with OS tag + status |
 
 ---
 
@@ -48,95 +25,60 @@ New work is **adding apps** and **fixing bugs** in the framework.
 
 ```
 apps/<n>/
-  meta.sh        # required — metadata and APP_CONFIGS array
-  install.sh     # optional — install_brew(), install_apt(), install()
-  config.sh      # optional — plain script, runs after auto-linking
-  remove.sh      # optional — plain script, runs after auto-unlinking
-  config/         # optional — config files to symlink into $HOME
+  meta.sh       # required — metadata only, no side effects
+  install.sh    # optional — install_brew / install_apt / install
+  config.sh     # optional — post-link script
+  remove.sh     # optional — post-unlink script
+  config/       # optional — files symlinked into $HOME
 ```
 
 ### `meta.sh`
 
 ```bash
-APP_OS="macos,linux"       # comma-separated: "macos" | "linux" | "macos,linux"
-APP_BINARY="nvim"          # binary checked by dotfiles config (empty = no check)
+APP_OS="macos,linux"          # "macos" | "linux" | "macos,linux"
+APP_BINARY="nvim"             # checked by `config`; "" skips check
 APP_DESCRIPTION="Neovim"
-APP_DEPS=("gpg")           # optional — binaries that must exist before install/config
+APP_DEPS=("gpg")              # other apps installed first if missing
 APP_CONFIGS=(
   "config/.config/nvim : ~/.config/nvim"
   "config/init-macos.lua : ~/.config/nvim/init-macos.lua : macos"
-  "config/init-linux.lua : ~/.config/nvim/init-linux.lua : linux"
 )
 
-NVIM_SOME_SETTING="value"  # app-specific variable — see below
+NVIM_PLUGIN_DIR="..."         # app-private vars — prefix with app name
 ```
 
-**`APP_OS` values:** comma-separated list of OS names the app supports.
-- `"macos,linux"` — runs on both (most apps)
-- `"macos"` — macOS only
-- `"linux"` — Linux only
+- `APP_CONFIGS` entry: `"src : dst"` or `"src : dst : os_tag"`. `src` is
+  relative to the app dir; `dst` supports `~`; `os_tag` is `macos` or `linux`.
+- `APP_DEPS` prompts `[y/N/a]` per missing dep; `a` = yes-to-all; any `N` aborts.
+  Each dep installs via the full `cmd_install` flow.
+- Defaults if omitted: `APP_OS="macos,linux"`, `APP_BINARY=""`, `APP_DEPS=()`,
+  `APP_CONFIGS=()`.
+- `meta.sh` sets variables only — never runs commands, never has side effects.
 
-**OS detection:** `os_name` returns `"macos"` or `"linux"`. Distro-level differences
-handled inside `install.sh` only, never in `meta.sh`.
+### `install.sh` dispatch
 
-**`APP_DEPS` format:** array of app names (matching a `apps/<name>/` directory) that must be installed before `install` or `config` runs.
-- Each dep is checked via `command_exists` against its `APP_BINARY`
-- If a dep is missing, the user is prompted: `[y/N/a]` — yes, no, or yes-to-all
-- Answering `a` (yes-to-all) skips further prompts and installs all remaining missing deps
-- Declining any dep aborts the command
-- Each dep is installed via `cmd_install "<dep>"` — the full dotfiles install flow
-- Example: `APP_DEPS=("gpg" "curl")`
+1. `install_brew` defined + brew present → call; hard-fail on error.
+2. else `install_apt` defined + apt present → call; hard-fail on error.
+3. then `install` defined → call; hard-fail on error.
+4. File exists but nothing ran → hard-fail.
+5. File missing → skip silently (valid for config-only apps).
 
-**`APP_CONFIGS` format:** `"src : dst"` or `"src : dst : os_tag"`
-- `src` is relative to the app directory
-- `dst` supports `~` expansion
-- `os_tag` optional: `"macos"` or `"linux"` — absent means both OSes
+### `config.sh` / `remove.sh`
 
-**Safe defaults if omitted:**
-- `APP_OS` → `"macos,linux"`
-- `APP_BINARY` → `""` (no binary check)
-- `APP_DEPS` → empty array (no dependency check)
-- `APP_CONFIGS` → empty array
-
-**App-specific variables:** `meta.sh` may also define variables used only by the app's
-own `install.sh` / `config.sh` / `remove.sh`. These are **not** read by `bin/dotfiles`.
-- Prefix with the app name: `GOPASS_REPO`, `NVIM_PLUGIN_DIR`, etc.
-- Place them after a blank line, separated from the framework variables above.
-- Example: `GOPASS_REPO="git@github.com:user/passwords"`
-
-### `install.sh`
-
-```bash
-install_brew() { require_brew <pkg>; }
-install_apt()  { require_apt <pkg>; }
-install()      { ... }
-```
-
-Dispatch rules:
-- `install_brew` defined + brew present → call it; hard-fail if errors
-- else `install_apt` defined + apt present → call it; hard-fail if errors
-- then `install` defined → call it; hard-fail if errors
-- `install.sh` exists but nothing ran → hard-fail with error
-- `install.sh` missing → silently skip (valid for config-only apps)
-
-### `config.sh` and `remove.sh`
-
-Plain scripts, no functions. All lib helpers are in scope. Always fully re-executed —
-their outcomes are never written to state.
+Plain scripts, no functions, no state writes. All `lib/*` helpers in scope.
+Must be **idempotent** — re-runs are expected and must be safe.
 
 ---
 
-## Reconciliation logic
+## Reconciliation (runs on `install` and `config`)
 
-On every `install` or `config`, after the package install step:
+1. Desired set = `APP_CONFIGS` filtered by current OS.
+2. Current set = `links[]` in state.
+3. Remove links not in desired → revert backup if present.
+4. Create links new in desired → back up any pre-existing regular file.
+5. Skip links already correct.
 
-1. Compute desired set from `APP_CONFIGS` filtered for current OS
-2. Read current set from `links[]` in state
-3. Remove links no longer in desired set → revert backup if one exists
-4. Create links new in desired set → backup any existing regular file first
-5. Skip links already correct
-
-Each action is written to state immediately. Re-runs are safe.
+Each action writes state immediately — never batched.
 
 ---
 
@@ -146,127 +88,112 @@ Each action is written to state immediately. Re-runs are safe.
 - Linux: `${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/state.json`
 
 ```json
-{
-  "nvim": {
-    "status": "configured",
-    "configured_at": "2026-04-13T10:00:00Z",
-    "links": [
-      { "src": "/home/ali/.dotfiles/apps/nvim/config/.config/nvim", "dst": "/home/ali/.config/nvim" }
-    ],
-    "backups": []
-  }
-}
+{ "nvim": { "status": "configured", "configured_at": "...",
+  "links": [ { "src": "...", "dst": "..." } ], "backups": [] } }
 ```
 
-Status values: `configured` | `configuring` | `removing`.
-
-Rules:
-- Written per action, never batched
-- `config.sh` / `remove.sh` outcomes never tracked
-- Custom data never written — only links and backups
-- All operations go through `lib/state.sh` only
+`status`: `configured` | `configuring` | `removing`.
+Only `links` and `backups` are tracked — never `config.sh` outcomes, never
+arbitrary data. **All reads/writes go through `lib/state.sh`.**
 
 ---
 
-## `lib/pkg.sh` — require helpers
+## Library surface (use these — do not re-implement)
 
-```bash
-require_brew        <pkg>
-require_brew_cask   <pkg>
-require_brew_tap    <tap> <pkg>
-require_apt         <pkg>
-require_cargo       <crate>
-require_go          <module>
-require_pip         <pkg>
-require_gh_release  <owner/repo> <binary_name> [asset_template]
-require_script      <url>
-```
+| Module | Functions |
+|---|---|
+| `lib/log.sh`   | `info`, `ok`, `warn`, `error`, `step` |
+| `lib/os.sh`    | `is_macos`, `is_linux`, `os_name`, `linux_distro`, `is_brew`, `is_apt`, `dotfiles_state_file` |
+| `lib/utils.sh` | `command_exists`, `ensure_dir`, `download_file`, `add_line_to_file`, `is_ci` |
+| `lib/link.sh`  | `safe_link`, `safe_unlink` |
+| `lib/state.sh` | all state read/write (jq-based) |
+| `lib/pkg.sh`   | `require_brew[_cask/_tap]`, `require_apt`, `require_cargo`, `require_go`, `require_pip`, `require_gh_release`, `require_script` (all idempotent) |
 
-Each checks if already installed before running (idempotent).
+---
+
+## Clean-code rules (enforced — review every change against this list)
+
+**DRY — use the library, do not recreate it.**
+- Package install? `require_*`. Never inline `brew install` / `apt-get install` / `curl | sh`.
+- Symlink? `safe_link` / `safe_unlink`. Never raw `ln -s` or `rm`.
+- Logging? `info` / `ok` / `warn` / `error` / `step`. Never raw `echo` with colors.
+- OS check? `is_macos` / `is_linux` / `os_name`. Never re-parse `uname`.
+- State? `lib/state.sh` only. Never `jq`, `grep`, `sed`, `awk` on `state.json` elsewhere.
+
+**SRP — one job per unit.**
+- `meta.sh` declares, never acts. `install.sh` installs packages, nothing else.
+  `config.sh` configures, `remove.sh` cleans up what `config.sh` created.
+- Library modules own their domain. Cross-module duplication is a bug — extend
+  the owning module instead.
+
+**YAGNI / no speculative abstraction.**
+- No flags, hooks, or config knobs without a current caller. No "future-proof"
+  parameters. Three similar lines beat a premature helper.
+- No dead code, commented-out blocks, or `TODO` placeholders. Delete instead.
+
+**Fail fast, fail loud.**
+- `set -euo pipefail` on every script. Hard-fail on install errors — never
+  swallow with `|| true` unless the value is explicitly optional (document why).
+- Validate at boundaries (user input, external commands). Trust internal helpers.
+
+**Idempotency is mandatory.**
+- `install` / `config` / `remove` must be safely re-runnable. Check state before
+  acting; mutate state immediately after acting.
+
+**No hidden coupling.**
+- App-private vars in `meta.sh` must be prefixed with the app name
+  (`GOPASS_REPO`, not `REPO`).
+- Apps never read another app's state, files, or vars. Cross-app dependencies
+  go through `APP_DEPS` only.
+
+**Comments explain *why*, not *what*.**
+- Default to no comment. Add one only for non-obvious constraints, subtle
+  invariants, or workarounds — never to restate the code.
 
 ---
 
 ## Coding standards
 
-- `#!/usr/bin/env bash` and `set -euo pipefail` on all scripts
-- **Bash 3.2 compatible** — no `declare -A`, no `mapfile`, no `readarray`
-- 2-space indent, `local` for all function variables
-- `[[ ]]` not `[ ]`, always quote `"$var"`
-- `jq` only for JSON — never awk/sed/grep on state file
-- No `set -x` in any shipped file
-- Raw ANSI escapes for colors — no tput
+- `#!/usr/bin/env bash` on every script. **Bash 3.2 compatible** — no
+  `declare -A`, `mapfile`, `readarray`, `${var,,}`.
+- 2-space indent; `local` every function var; `[[ ]]` not `[ ]`; quote `"$var"`.
+- Raw ANSI escapes for color — no `tput`. No `set -x` in shipped files.
 
 ---
 
-## Testing
+## Testing — mandatory for every `lib/` change
 
-All core library code in `lib/` **must** have corresponding tests in `tests/`.
-Every new function or behaviour change requires a matching test before work is done.
+Every new function or behaviour change in `lib/` needs a matching test before
+the work is done. Tests live in `tests/test_<module>.sh` and run via
+`bash tests/run_all.sh`.
 
-### Test infrastructure
-
-| File | Purpose |
-|---|---|
-| `tests/unit.sh` | Minimal bash unit-test framework |
-| `tests/run_all.sh` | Runner — executes every `tests/test_*.sh` |
-| `tests/test_utils.sh` | Tests for `lib/utils.sh` |
-| `tests/test_log.sh` | Tests for `lib/log.sh` |
-| `tests/test_os.sh` | Tests for `lib/os.sh` |
-| `tests/test_link.sh` | Tests for `lib/link.sh` |
-| `tests/test_state.sh` | Tests for `lib/state.sh` |
-
-Run the full suite:
-
-```bash
-bash tests/run_all.sh
-```
-
-### Writing tests
-
-1. Create `tests/test_<module>.sh` matching the lib file
-2. Source the unit framework and the lib under test
-3. Define functions prefixed with `test_` — auto-discovered
-4. Use `_setup` / `_teardown` with `trap _teardown RETURN` for temp dirs
-5. Call `run_tests` at the bottom
-
-### Available assertions
-
-| Function | What it checks |
-|---|---|
-| `assert_equals <expected> <actual>` | String equality |
-| `assert_retval <code> <command...>` | Exit code |
-| `assert_contains <haystack> <needle>` | Substring match |
-| `assert_file_exists <path>` | File or dir exists |
-| `assert_symlink <path>` | Path is a symlink |
-| `assert_not_exists <path>` | Path does not exist |
-
-### Test conventions
-
-- Use `mktemp -d` for isolation — never write to the repo tree
-- Stub external commands (brew, apt-get, cargo) via shell functions — never call real package managers
-- No network calls, no sleeps
-- Bash 3.2 compatible throughout
+- Framework: `tests/unit.sh` (defines `assert_equals`, `assert_retval`,
+  `assert_contains`, `assert_file_exists`, `assert_symlink`, `assert_not_exists`,
+  `run_tests`).
+- Functions prefixed `test_` are auto-discovered. Use `_setup` / `_teardown`
+  with `trap _teardown RETURN` for temp dirs.
+- Isolate with `mktemp -d` — never write inside the repo.
+- Stub `brew`, `apt-get`, `cargo`, `curl` via shell functions — no real package
+  managers, no network, no sleeps.
 
 ---
 
-## Adding a new app — checklist
+## Adding a new app
 
-1. Create `apps/<n>/` directory
-2. Write `meta.sh` — set `APP_OS`, `APP_BINARY`, `APP_DESCRIPTION`, `APP_CONFIGS`
-3. Write `install.sh` if the app has a package to install
-4. Add config files under `config/` mirroring `$HOME` structure
-5. Write `config.sh` if post-link setup is needed
-6. Write `remove.sh` if `config.sh` created things that need cleanup
-7. Test: `dotfiles install <n>` → `dotfiles config <n>` → `dotfiles remove <n>`
-8. Verify `dotfiles list` shows the app correctly
+1. `apps/<n>/meta.sh` — set `APP_OS`, `APP_BINARY`, `APP_DESCRIPTION`, `APP_CONFIGS`.
+2. `install.sh` if a package must be installed (prefer `require_*`).
+3. `config/` mirroring `$HOME` for files that symlink in.
+4. `config.sh` / `remove.sh` only if post-link setup is needed.
+5. Verify: `dotfiles install <n>` → `dotfiles config <n>` → `dotfiles remove <n>`,
+   then `dotfiles list`.
 
 ---
 
 ## Known constraints
 
-- No package uninstall — `dotfiles remove` only removes config links
-- No `dotfiles install all` or profiles
-- `dotfiles update` only runs `git pull` — no auto-reconfig
-- `bin/dotfiles` is always a symlink — never copied
-- `install.sh` uses `$SUDO_USER` to resolve real user home under sudo
-- Distro-level differences handled inside `install.sh` only
+- No package uninstall — `remove` only unlinks.
+- No `install all` or profiles.
+- `update` is `git pull` only — no auto-reconfig.
+- `bin/dotfiles` is always a symlink.
+- `install.sh` uses `$SUDO_USER` to resolve the real home under sudo.
+- Distro-level branching lives in `install.sh` — never in `meta.sh`.
