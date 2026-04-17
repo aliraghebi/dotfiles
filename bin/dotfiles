@@ -65,6 +65,7 @@ _load_app() {
   fi
 
   # Safe defaults
+  APP_TYPE=""
   APP_OS="macos,linux"
   APP_BINARY=""
   APP_DESCRIPTION=""
@@ -299,13 +300,17 @@ cmd_install() {
 
   step "Installing $app"
 
-  state_set_status "$app" "configuring"
+  if [[ "$APP_TYPE" != "action" ]]; then
+    state_set_status "$app" "configuring"
+  fi
 
   # Run install dispatch
   _run_install_dispatch "$app"
 
-  # Reconcile config links
-  _reconcile_links "$app"
+  if [[ "$APP_TYPE" != "action" ]]; then
+    # Reconcile config links
+    _reconcile_links "$app"
+  fi
 
   # Run config.sh if present
   local config_script="$APP_DIR/config.sh"
@@ -314,7 +319,9 @@ cmd_install() {
     source "$config_script"
   fi
 
-  state_set_configured "$app"
+  if [[ "$APP_TYPE" != "action" ]]; then
+    state_set_configured "$app"
+  fi
   ok "$app installed and configured"
 }
 
@@ -334,8 +341,10 @@ cmd_config() {
     fi
   fi
 
-  # Reconcile config links
-  _reconcile_links "$app"
+  if [[ "$APP_TYPE" != "action" ]]; then
+    # Reconcile config links
+    _reconcile_links "$app"
+  fi
 
   # Run config.sh if present
   local config_script="$APP_DIR/config.sh"
@@ -343,13 +352,20 @@ cmd_config() {
     source "$config_script"
   fi
 
-  state_set_configured "$app"
+  if [[ "$APP_TYPE" != "action" ]]; then
+    state_set_configured "$app"
+  fi
   ok "$app configured"
 }
 
 cmd_remove() {
   local app="$1"
   _load_app "$app"
+
+  if [[ "$APP_TYPE" == "action" ]]; then
+    error "$app is an action app — nothing to remove"
+    exit 1
+  fi
 
   step "Removing $app"
 
@@ -418,6 +434,7 @@ cmd_list() {
     [[ -f "$meta" ]] || continue
 
     # Load meta (reset defaults first)
+    APP_TYPE=""
     APP_OS="macos,linux"
     APP_BINARY=""
     APP_DESCRIPTION=""
@@ -432,28 +449,28 @@ cmd_list() {
       *)     os_tag="macOS, Linux" ;;
     esac
 
-    # Status from state
-    local status
-    status=$(state_get_status "$app")
-    if [[ -z "$status" ]]; then
-      status="not_configured"
-    fi
-
     # Pad status label to a fixed visual width (20 chars) so description
     # column stays aligned despite invisible color escape codes.
     local status_display fix_hint=""
-    case "$status" in
-      configured)
-        status_display="${_GREEN}✓ Configured        ${_RESET}"
-        ;;
-      removing)
-        status_display="${_YELLOW}⚠ Incomplete        ${_RESET}"
-        fix_hint="  → Run: dotfiles remove $app"
-        ;;
-      *)
-        status_display="${_RED}✗ Not Configured    ${_RESET}"
-        ;;
-    esac
+    if [[ "$APP_TYPE" == "action" ]]; then
+      status_display="${_CYAN}~ Action            ${_RESET}"
+    else
+      local status
+      status=$(state_get_status "$app")
+      [[ -z "$status" ]] && status="not_configured"
+      case "$status" in
+        configured)
+          status_display="${_GREEN}✓ Configured        ${_RESET}"
+          ;;
+        removing)
+          status_display="${_YELLOW}⚠ Incomplete        ${_RESET}"
+          fix_hint="  → Run: dotfiles remove $app"
+          ;;
+        *)
+          status_display="${_RED}✗ Not Configured    ${_RESET}"
+          ;;
+      esac
+    fi
 
     printf "%-18s %-16s ${status_display}  %s\n" "$app" "$os_tag" "${APP_DESCRIPTION:-}"
     if [[ -n "$fix_hint" ]]; then

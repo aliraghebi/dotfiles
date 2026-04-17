@@ -51,8 +51,9 @@ NVIM_PLUGIN_DIR="..."         # app-private vars — prefix with app name
   relative to the app dir; `dst` supports `~`; `os_tag` is `macos` or `linux`.
 - `APP_DEPS` prompts `[y/N/a]` per missing dep; `a` = yes-to-all; any `N` aborts.
   Each dep installs via the full `cmd_install` flow.
-- Defaults if omitted: `APP_OS="macos,linux"`, `APP_BINARY=""`, `APP_DEPS=()`,
-  `APP_CONFIGS=()`.
+- Defaults if omitted: `APP_OS="macos,linux"`, `APP_BINARY=""`, `APP_TYPE=""`,
+  `APP_DEPS=()`, `APP_CONFIGS=()`.
+- `APP_TYPE="action"`: skips state, reconciliation, and `remove`; shows `~ Action` in `dotfiles list`. For one-shot apps with no managed links.
 - `meta.sh` sets variables only — never runs commands, never has side effects.
 
 ### `install.sh` dispatch
