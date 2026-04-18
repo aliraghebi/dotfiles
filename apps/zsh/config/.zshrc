@@ -43,15 +43,16 @@ setopt AUTO_CD
 setopt AUTO_PUSHD
 setopt PUSHD_IGNORE_DUPS
 
+# XTERM
+TERM=xterm-256color
+
 # Aliases
 if [[ "$(uname -s)" == "Darwin" ]]; then
   alias ls='ls -G'
 else
   alias ls='ls --color=auto'
 fi
-# Use kitty's SSH kitten when inside kitty so terminfo is auto-copied to remotes
-# Force xterm-256color over SSH so sudo on remotes always finds the terminfo
-[[ "$TERM" == "xterm-kitty" ]] && alias ssh='TERM=xterm-256color /usr/bin/ssh'
+
 alias ll='ls -lAh'
 alias la='ls -A'
 alias ..='cd ..'
