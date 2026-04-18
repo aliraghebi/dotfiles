@@ -2,18 +2,37 @@
 
 # Oh My Zsh
 export ZSH="${ZSH:-$HOME/.oh-my-zsh}"
-ZSH_THEME="robbyrussell"
-plugins=(git brew macos colored-man-pages)
+
+if command -v starship >/dev/null 2>&1; then
+  eval "$(starship init zsh)"
+else
+  # set name of the theme to load. Optionally, if you set this to "random"
+  # it'll load a random theme each time that oh-my-zsh is loaded.
+  # see https://github.com/robbyrussell/oh-my-zsh/wiki/Themes
+  ZSH_THEME="gnzh"
+fi
+
+plugins=(git brew macos colored-man-pages golang zsh-autosuggestions)
 
 [[ -f "$ZSH/oh-my-zsh.sh" ]] && source "$ZSH/oh-my-zsh.sh"
 
 # History
-HISTSIZE=50000
-SAVEHIST=50000
 HISTFILE="$HOME/.zsh_history"
+HISTSIZE=100000
+SAVEHIST=100000
+setopt INC_APPEND_HISTORY
 setopt SHARE_HISTORY
+setopt HIST_EXPIRE_DUPS_FIRST
 setopt HIST_IGNORE_DUPS
-setopt HIST_IGNORE_SPACE
+setopt HIST_IGNORE_ALL_DUPS
+setopt HIST_FIND_NO_DUPS
+setopt HIST_SAVE_NO_DUPS
+setopt HIST_REDUCE_BLANKS
+setopt HIST_VERIFY
+
+# partial history search bindings
+bindkey '\e[A' history-search-backward
+bindkey '\e[B' history-search-forward
 
 # Completion
 autoload -Uz compinit && compinit -d "$XDG_CACHE_HOME/zsh/zcompdump"
