@@ -80,11 +80,21 @@ _load_app() {
 
 _check_deps() {
   local app="$1"
+  local deps=("${APP_DEPS[@]+"${APP_DEPS[@]}"}")
 
   local dep
   local yes_to_all=false
-  for dep in "${APP_DEPS[@]+"${APP_DEPS[@]}"}"; do
-    if ! command_exists "$dep"; then
+  for dep in "${deps[@]+"${deps[@]}"}"; do
+    local dep_binary="$dep"
+    local dep_meta="$DOTFILES_DIR/apps/$dep/meta.sh"
+    if [[ -f "$dep_meta" ]]; then
+      APP_BINARY=""
+      source "$dep_meta"
+      [[ -n "$APP_BINARY" ]] && dep_binary="$APP_BINARY"
+      _load_app "$app"
+    fi
+
+    if ! command_exists "$dep_binary"; then
       warn "Missing dependency: '$dep' is required but not installed."
       if [[ "$yes_to_all" == false ]]; then
         local reply
@@ -99,8 +109,7 @@ _check_deps() {
       fi
 
       cmd_install "$dep"
-
-      _load_app $app
+      _load_app "$app"
     fi
   done
 }
