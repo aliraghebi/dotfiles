@@ -1,20 +1,55 @@
 # .zshrc — interactive shell configuration
 
+# Path deduplication
+typeset -U path
+
+# Locale
+export LANG="en_US.UTF-8"
+export LANGUAGE="en_US.UTF-8"
+export LC_ALL="en_US.UTF-8"
+
+# Editor / terminal
+EDITOR="$(command -v nvim)"
+export EDITOR
+SUDO_EDITOR="$(command -v nvim)"
+export SUDO_EDITOR
+TERM=xterm-256color
+export TERM
+
+# PATH additions
+[[ -d "$HOME/bin" ]] && path+=("$HOME/bin")
+[[ -d "$HOME/.local/bin" ]] && path+=("$HOME/.local/bin")
+[[ -d "$HOME/.cargo/bin" ]] && path+=("$HOME/.cargo/bin")
+
 # Oh My Zsh
 export ZSH="${ZSH:-$HOME/.oh-my-zsh}"
+DISABLE_AUTO_TITLE='true'
 
 if command -v starship >/dev/null 2>&1; then
   eval "$(starship init zsh)"
 else
-  # set name of the theme to load. Optionally, if you set this to "random"
-  # it'll load a random theme each time that oh-my-zsh is loaded.
-  # see https://github.com/robbyrussell/oh-my-zsh/wiki/Themes
   ZSH_THEME="gnzh"
 fi
 
 plugins=(git brew macos colored-man-pages golang zsh-autosuggestions)
-
 [[ -f "$ZSH/oh-my-zsh.sh" ]] && source "$ZSH/oh-my-zsh.sh"
+
+# Python
+export VIRTUALENV_SYSTEM_SITE_PACKAGES=true
+
+if command -v pyenv >/dev/null 2>&1 && [[ -z "$VIRTUAL_ENV" ]]; then
+  export PYENV_ROOT="$HOME/.pyenv"
+  path=("$PYENV_ROOT/bin" "${path[@]}")
+  eval "$(pyenv init -)"
+fi
+
+# Cloud / Kubernetes
+export AWS_VAULT_BACKEND=file
+[[ -f "$HOME/.kube/k3s.yaml" ]] && export KUBECONFIG="$HOME/.kube/k3s.yaml"
+
+if command -v k9s >/dev/null 2>&1; then
+  export K9S_CONFIG_DIR="$HOME/.config/k9s"
+fi
 
 # History
 HISTFILE="$HOME/.zsh_history"
@@ -30,7 +65,6 @@ setopt HIST_SAVE_NO_DUPS
 setopt HIST_REDUCE_BLANKS
 setopt HIST_VERIFY
 
-# partial history search bindings
 bindkey '\e[A' history-search-backward
 bindkey '\e[B' history-search-forward
 
@@ -42,9 +76,6 @@ zstyle ':completion:*' menu select
 setopt AUTO_CD
 setopt AUTO_PUSHD
 setopt PUSHD_IGNORE_DUPS
-
-# XTERM
-TERM=xterm-256color
 
 # Aliases
 if [[ "$(uname -s)" == "Darwin" ]]; then

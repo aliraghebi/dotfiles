@@ -432,10 +432,10 @@ cmd_list() {
   local current_os
   current_os=$(os_name)
 
-  printf "\n%-18s %-16s %-22s %s\n" "APP" "OS" "STATUS" "DESCRIPTION"
-  printf "%-18s %-16s %-22s %s\n" "---" "--" "------" "-----------"
+  printf "\n%-4s %-18s %-16s %-22s %s\n" "#" "APP" "OS" "STATUS" "DESCRIPTION"
+  printf "%-4s %-18s %-16s %-22s %s\n" "-" "---" "--" "------" "-----------"
 
-  local app
+  local app row=0
   for app_dir in "$apps_dir"/*/; do
     [[ -d "$app_dir" ]] || continue
     app=$(basename "$app_dir")
@@ -481,7 +481,8 @@ cmd_list() {
       esac
     fi
 
-    printf "%-18s %-16s ${status_display}  %s\n" "$app" "$os_tag" "${APP_DESCRIPTION:-}"
+    row=$((row + 1))
+    printf "%-4s %-18s %-16s ${status_display}  %s\n" "$row" "$app" "$os_tag" "${APP_DESCRIPTION:-}"
     if [[ -n "$fix_hint" ]]; then
       printf "%s\n" "$fix_hint"
     fi

@@ -69,4 +69,26 @@ test_is_brew_returns_exit_code() {
   fi
 }
 
+# ── cpu_arch ──
+
+test_cpu_arch_returns_non_empty() {
+  local arch
+  arch=$(cpu_arch)
+  if [[ -z "$arch" ]]; then
+    echo "FAIL: cpu_arch returned empty string" >&2
+    return 1
+  fi
+}
+
+test_cpu_arch_maps_known_values() {
+  local raw arch
+  raw=$(uname -m)
+  arch=$(cpu_arch)
+  case "$raw" in
+    x86_64)        assert_equals "amd64" "$arch" ;;
+    aarch64|arm64) assert_equals "arm64" "$arch" ;;
+    *)             assert_equals "$raw" "$arch" ;;
+  esac
+}
+
 run_tests

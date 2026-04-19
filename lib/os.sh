@@ -39,6 +39,14 @@ is_pacman() {
   command_exists pacman
 }
 
+cpu_arch() {
+  case "$(uname -m)" in
+    x86_64)        echo "amd64" ;;
+    aarch64|arm64) echo "arm64" ;;
+    *)             uname -m ;;
+  esac
+}
+
 dotfiles_state_file() {
   if is_macos; then
     echo "$HOME/Library/Application Support/dotfiles/state.json"
