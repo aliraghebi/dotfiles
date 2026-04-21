@@ -7,8 +7,7 @@ vim.opt.fileformats = "unix,dos"
 vim.opt.timeout = true
 vim.opt.timeoutlen = 1000
 vim.opt.ttimeoutlen = 100
-vim.opt.laststatus = 2
-vim.opt.statusline = "%f %=L:%l/%L %c (%p%%)"
+vim.opt.laststatus = 3
 vim.opt.backup = false
 vim.opt.writebackup = false
 vim.opt.swapfile = false
@@ -91,13 +90,36 @@ vim.opt.rtp:prepend(lazypath)
 
 require("lazy").setup({
   {
-    "folke/tokyonight.nvim",
+    "catppuccin/nvim",
+    name = "catppuccin",
     priority = 1000,
-    opts = { style = "night" },
+    opts = { flavour = "mocha" },
     config = function(_, opts)
-      require("tokyonight").setup(opts)
-      vim.cmd.colorscheme("tokyonight-night")
+      require("catppuccin").setup(opts)
+      vim.cmd.colorscheme("catppuccin-nvim")
     end,
+  },
+  {
+    "nvim-lualine/lualine.nvim",
+    dependencies = { "catppuccin/nvim" },
+    opts = {
+      options = {
+        theme = "catppuccin-mocha",
+        globalstatus = true,
+      },
+      sections = {
+        lualine_a = { "mode" },
+        lualine_b = { { "filename", path = 1 } },
+        lualine_c = { { "datetime", style = "%a %d %b %Y %I:%M:%S %p" } },
+        lualine_x = { "filetype" },
+        lualine_y = { "fileformat", "encoding" },
+        lualine_z = { "progress", "location" },
+      },
+      tabline = {
+        lualine_a = { "tabs" },
+        lualine_z = { { "filename", path = 1 } },
+      },
+    },
   },
 })
 
