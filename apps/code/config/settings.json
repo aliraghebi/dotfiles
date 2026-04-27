@@ -2,7 +2,6 @@
   "editor.fontFamily": "JetBrains Mono, Menlo, Monaco, monospace",
   "editor.fontSize": 16,
   "editor.lineHeight": 1.6,
-  "editor.tabSize": 2,
   "editor.insertSpaces": true,
   "editor.formatOnSave": true,
   "editor.minimap.enabled": false,
@@ -22,5 +21,15 @@
   "explorer.confirmDragAndDrop": false,
   "telemetry.telemetryLevel": "off",
   "files.autoSave": "onFocusChange",
-  "window.zoomLevel": 1
+  "window.zoomLevel": 1,
+  "claudeCode.preferredLocation": "panel",
+  "terminal.integrated.initialHint": false,
+  "gitlens.ai.model": "vscode",
+  "gitlens.ai.vscode.model": "copilot:gpt-4.1",
+  "workbench.iconTheme": "material-icon-theme",
+  "laravel-pint.enable": true,
+  "[php]": {
+    "editor.defaultFormatter": "open-southeners.laravel-pint"
+  },
+  "workbench.colorTheme": "Dark+"
 }
