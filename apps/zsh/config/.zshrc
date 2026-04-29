@@ -94,3 +94,10 @@ alias vi='nvim'
 
 # Local overrides (not tracked in dotfiles)
 [[ -f "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"
+
+# bun completions
+[ -s "/Users/ali/.bun/_bun" ] && source "/Users/ali/.bun/_bun"
+
+# bun
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
