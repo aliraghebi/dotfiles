@@ -28,6 +28,22 @@ install() {
     info "zsh-autosuggestions already installed"
   fi
 
+  local syntax_dir="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting"
+  if [[ ! -d "$syntax_dir" ]]; then
+    info "Installing zsh-syntax-highlighting"
+    git clone https://github.com/zsh-users/zsh-syntax-highlighting "$syntax_dir"
+  else
+    info "zsh-syntax-highlighting already installed"
+  fi
+
+  local history_dir="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-history-substring-search"
+  if [[ ! -d "$history_dir" ]]; then
+    info "Installing zsh-history-substring-search"
+    git clone https://github.com/zsh-users/zsh-history-substring-search "$history_dir"
+  else
+    info "zsh-history-substring-search already installed"
+  fi
+
   local zsh_path
   zsh_path=$(command -v zsh 2>/dev/null || true)
   if [[ -n "$zsh_path" && "$SHELL" != "$zsh_path" ]]; then

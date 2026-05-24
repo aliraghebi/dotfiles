@@ -31,7 +31,25 @@ else
   ZSH_THEME="gnzh"
 fi
 
-plugins=(git brew macos colored-man-pages golang zsh-autosuggestions)
+plugins=(
+  git
+  brew
+  macos
+  colored-man-pages
+  golang
+  laravel
+  composer
+  npm
+  docker
+  docker-compose
+  kubectl
+  tmux
+  gh
+  copypath
+  zsh-autosuggestions
+  zsh-history-substring-search
+  zsh-syntax-highlighting   # must be last
+)
 [[ -f "$ZSH/oh-my-zsh.sh" ]] && source "$ZSH/oh-my-zsh.sh"
 
 # Python
@@ -65,8 +83,8 @@ setopt HIST_SAVE_NO_DUPS
 setopt HIST_REDUCE_BLANKS
 setopt HIST_VERIFY
 
-bindkey '\e[A' history-search-backward
-bindkey '\e[B' history-search-forward
+bindkey '\e[A' history-substring-search-up
+bindkey '\e[B' history-substring-search-down
 
 # Completion
 autoload -Uz compinit && compinit -d "$XDG_CACHE_HOME/zsh/zcompdump"
