@@ -43,7 +43,6 @@ plugins=(
   docker
   docker-compose
   kubectl
-  tmux
   gh
   copypath
   zsh-autosuggestions
