@@ -7,6 +7,14 @@ targets (Arch, Windows, ...) may land later — keep OS-specific logic behind
 **adding features**, **fixing bugs**. `lib/` / `bin/` changes are fine when a
 feature needs them; hold the clean-code bar and add tests for any `lib/` change.
 
+> **This repo is PUBLIC.** Never commit sensitive or personal data: API keys,
+> tokens, passwords, SSH/GPG private keys, emails, absolute `~/` paths, or
+> machine-specific identifiers. When adding an app that symlinks a config into
+> the repo, audit the file first — anything host-specific or secret belongs in
+> a machine-local file (e.g. `settings.local.json`), not here. Beware configs
+> that apps rewrite at runtime (e.g. `~/.claude/settings.json`): re-check them
+> before pushing, since a tool may inject a secret after you first add them.
+
 ---
 
 ## Commands
