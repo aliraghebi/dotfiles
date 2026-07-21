@@ -72,6 +72,17 @@ require_go() {
   go install "$module"
 }
 
+require_npm() {
+  local pkg="$1"
+  local bin="${2:-$(basename "$pkg")}"
+  if command_exists "$bin"; then
+    info "$bin already installed via npm"
+    return 0
+  fi
+  info "Installing $pkg via npm"
+  npm install -g "$pkg"
+}
+
 require_pip() {
   local pkg="$1"
   if pip3 show "$pkg" >/dev/null 2>&1; then

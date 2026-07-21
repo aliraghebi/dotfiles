@@ -1,0 +1,39 @@
+# Ghostty configuration
+# Docs: https://ghostty.org/docs/config
+
+# --- Theme & colors ---
+theme = "Catppuccin Mocha"
+background-opacity = 0.95
+background-blur = 20
+
+# --- Font ---
+font-family = "JetBrainsMono Nerd Font"
+font-size = 16
+font-thicken = true
+adjust-cell-height = 20%
+
+# --- Cursor ---
+cursor-style = block
+cursor-style-blink = false
+shell-integration-features = no-cursor
+
+# --- Window ---
+window-padding-x = 12
+window-padding-y = 12
+window-padding-balance = true
+window-save-state = always
+macos-titlebar-style = tabs
+window-colorspace = display-p3
+
+# --- macOS ---
+macos-option-as-alt = true
+
+# --- Behaviour ---
+copy-on-select = clipboard
+confirm-close-surface = false
+mouse-hide-while-typing = true
+scrollback-limit = 100000
+
+# --- Keybindings ---
+keybind = cmd+shift+comma=reload_config
+keybind = cmd+enter=toggle_fullscreen

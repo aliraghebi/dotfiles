@@ -117,6 +117,35 @@ test_require_cargo_installs_when_missing() {
   assert_equals "true" "$installed"
 }
 
+# ── require_npm idempotency ──
+
+test_require_npm_skips_when_binary_exists() {
+  command_exists() { return 0; }
+  export -f command_exists
+  local installed=false
+  npm() { installed=true; }
+  export -f npm
+  require_npm "@colbymchenry/codegraph" "codegraph"
+  unset -f command_exists npm
+  assert_equals "false" "$installed"
+}
+
+test_require_npm_installs_when_missing() {
+  command_exists() { return 1; }
+  export -f command_exists
+  local tmp
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' RETURN
+  local marker="$tmp/installed"
+  npm() {
+    if [[ "$1" == "install" && "$2" == "-g" ]]; then touch "$marker"; return 0; fi
+  }
+  export -f npm
+  require_npm "@colbymchenry/codegraph" "codegraph"
+  unset -f command_exists npm
+  assert_file_exists "$marker"
+}
+
 # ── require_script ──
 
 test_require_script_uses_sh_by_default() {
