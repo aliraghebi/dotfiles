@@ -2,8 +2,10 @@
 set -euo pipefail
 
 install_brew() {
-  if [[ -d "/Applications/Claude.app" ]]; then
-    info "Claude desktop app already present, skipping"
+  # Never let brew adopt a desktop app that was installed from the website —
+  # but once brew owns the cask, it must stay in the install/upgrade path.
+  if [[ -d "/Applications/Claude.app" ]] && ! brew_cask_installed claude; then
+    info "Claude desktop app present but not brew-managed — it updates itself in-app"
     return 0
   fi
   require_brew_cask claude

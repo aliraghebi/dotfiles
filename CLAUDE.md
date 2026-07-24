@@ -142,7 +142,7 @@ arbitrary data. **All reads/writes go through `lib/state.sh`.**
 | `lib/utils.sh` | `command_exists`, `ensure_dir`, `download_file`, `add_line_to_file`, `is_ci` |
 | `lib/link.sh`  | `safe_link`, `safe_unlink` |
 | `lib/state.sh` | all state read/write (jq-based) |
-| `lib/pkg.sh`   | `require_brew[_cask/_tap]`, `require_apt`, `require_pacman`, `require_cargo`, `require_go`, `require_npm`, `require_pip`, `require_gh_release`, `require_script` (all idempotent); `pkg_set_mode`, `pkg_upgrading` |
+| `lib/pkg.sh`   | `require_brew[_cask/_tap]`, `require_apt`, `require_pacman`, `require_cargo`, `require_go`, `require_npm`, `require_pip`, `require_gh_release`, `require_script` (all idempotent); `brew_cask_installed`, `pkg_set_mode`, `pkg_upgrading` |
 
 ---
 

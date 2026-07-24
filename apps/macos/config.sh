@@ -85,21 +85,12 @@ defaults write com.apple.dock expose-group-apps -bool true
 defaults write com.apple.menuextra.clock ShowDate -int 1
 defaults write com.apple.menuextra.clock ShowDayOfWeek -bool true
 defaults write com.apple.menuextra.clock IsAnalog -bool false
-defaults write com.apple.menuextra.clock Show24Hour -bool false
-defaults write com.apple.menuextra.clock ShowAMPM -bool true
+defaults write com.apple.menuextra.clock Show24Hour -bool true
+defaults write com.apple.menuextra.clock ShowAMPM -bool false
 defaults write com.apple.menuextra.clock FlashDateSeparators -bool false
 defaults write com.apple.menuextra.clock ShowSeconds -bool true
 
-# ── Control Center ────────────────────────────────────────────────────────────
-# Bluetooth: show in menu bar
-defaults -currentHost write com.apple.controlcenter Bluetooth -int 18
-defaults write com.apple.controlcenter "NSStatusItem Visible Bluetooth" -bool true
-
-# Sound: always show in menu bar
-defaults -currentHost write com.apple.controlcenter Sound -int 18
-defaults write com.apple.controlcenter "NSStatusItem Visible Sound" -bool true
-
-# Battery: show in menu bar & control center, with percentage
+# ── Battery: show in menu bar & control center, with percentage ───────────────
 defaults -currentHost write com.apple.controlcenter Battery -int 3
 defaults write com.apple.controlcenter "NSStatusItem Visible Battery" -bool true
 defaults -currentHost write com.apple.controlcenter BatteryShowPercentage -bool true

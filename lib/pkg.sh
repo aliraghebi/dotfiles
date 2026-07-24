@@ -47,9 +47,13 @@ require_brew() {
   brew install "$pkg"
 }
 
+brew_cask_installed() {
+  brew list --cask "$1" >/dev/null 2>&1
+}
+
 require_brew_cask() {
   local pkg="$1"
-  if brew list --cask "$pkg" >/dev/null 2>&1; then
+  if brew_cask_installed "$pkg"; then
     if pkg_upgrading; then
       # Casks that update themselves are left alone — brew skips them without --greedy
       info "Upgrading $pkg via brew cask"

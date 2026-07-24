@@ -232,6 +232,14 @@ test_require_brew_still_installs_when_missing_in_upgrade_mode() {
   assert_equals "install some-pkg" "$action"
 }
 
+test_brew_cask_installed_reflects_brew_list() {
+  brew() { [[ "$1" == "list" && "$3" == "present-cask" ]]; }
+  export -f brew
+  assert_retval 0 brew_cask_installed "present-cask"
+  assert_retval 1 brew_cask_installed "absent-cask"
+  unset -f brew
+}
+
 test_require_brew_cask_upgrades_when_installed() {
   local action=""
   brew() {
