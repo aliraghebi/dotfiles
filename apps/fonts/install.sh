@@ -5,7 +5,7 @@ _install_nerd_font() {
   local zip_name="$2"
   local font_dir="${HOME}/.local/share/fonts/${font_name}"
 
-  if [[ -d "$font_dir" ]] && [[ -n "$(ls -A "$font_dir" 2>/dev/null)" ]]; then
+  if [[ -d "$font_dir" ]] && [[ -n "$(ls -A "$font_dir" 2>/dev/null)" ]] && ! pkg_upgrading; then
     info "${font_name} nerd font already installed"
     return 0
   fi
@@ -17,6 +17,11 @@ _install_nerd_font() {
   if [[ -z "$version" ]]; then
     warn "Could not fetch nerd-fonts version — skipping ${font_name}"
     return 1
+  fi
+
+  if [[ -f "${font_dir}/.version" ]] && [[ "$(cat "${font_dir}/.version")" == "$version" ]]; then
+    info "${font_name} nerd font already at ${version}"
+    return 0
   fi
 
   local temp_dir
@@ -33,6 +38,7 @@ _install_nerd_font() {
   ensure_dir "$font_dir"
   unzip -qo "${temp_dir}/font.zip" -d "$font_dir"
   rm -rf "$temp_dir"
+  echo "$version" > "${font_dir}/.version"
   ok "Installed ${font_name} nerd font ${version}"
 }
 

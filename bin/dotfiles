@@ -50,6 +50,7 @@ Usage: dotfiles <command> [app]
 Commands:
   install <app>   Install and configure an app
   config  <app>   Configure an app (must already be installed)
+  upgrade [app]   Upgrade an app to the latest version (no app = all configured)
   remove  <app>   Remove an app's config links
   update          Pull latest dotfiles from git
   list            List all apps and their status
@@ -78,6 +79,43 @@ _load_app() {
   export APP_CONF_DIR="$DOTFILES_DIR/apps/$app/config"
 }
 
+# _meta_field <app> <var> — reads one meta.sh variable in a subshell so the
+# caller's app globals survive
+_meta_field() {
+  local meta="$DOTFILES_DIR/apps/$1/meta.sh"
+  local var="$2"
+  [[ -f "$meta" ]] || return 0
+  (
+    APP_OS="macos,linux"
+    APP_BINARY=""
+    source "$meta"
+    eval "printf '%s' \"\${$var}\""
+  )
+}
+
+# _app_supports_os <app> — true if the app declares support for the current OS
+_app_supports_os() {
+  local app_os
+  app_os=$(_meta_field "$1" APP_OS)
+  [[ -z "$app_os" ]] && return 0
+  [[ "$app_os" == *"$(os_name)"* ]]
+}
+
+# _app_present <app> — true if the app is installed on this machine.
+# Prefers APP_BINARY; apps that ship no binary fall back to their state entry.
+_app_present() {
+  local app="$1"
+  [[ -f "$DOTFILES_DIR/apps/$app/meta.sh" ]] || { command_exists "$app"; return; }
+
+  local binary
+  binary=$(_meta_field "$app" APP_BINARY)
+  if [[ -n "$binary" ]]; then
+    command_exists "$binary"
+    return
+  fi
+  [[ "$(state_get_status "$app")" == "configured" ]]
+}
+
 _check_deps() {
   local app="$1"
   local deps=("${APP_DEPS[@]+"${APP_DEPS[@]}"}")
@@ -85,16 +123,12 @@ _check_deps() {
   local dep
   local yes_to_all=false
   for dep in "${deps[@]+"${deps[@]}"}"; do
-    local dep_binary="$dep"
-    local dep_meta="$DOTFILES_DIR/apps/$dep/meta.sh"
-    if [[ -f "$dep_meta" ]]; then
-      APP_BINARY=""
-      source "$dep_meta"
-      [[ -n "$APP_BINARY" ]] && dep_binary="$APP_BINARY"
-      _load_app "$app"
+    if ! _app_supports_os "$dep"; then
+      info "Skipping dependency '$dep' — not supported on $(os_name)"
+      continue
     fi
 
-    if ! command_exists "$dep_binary"; then
+    if ! _app_present "$dep"; then
       warn "Missing dependency: '$dep' is required but not installed."
       if [[ "$yes_to_all" == false ]]; then
         local reply
@@ -247,53 +281,89 @@ _reconcile_links() {
   done
 }
 
-# _run_install_dispatch <app> — runs install.sh dispatch logic
-_run_install_dispatch() {
+# _resolve_step <prefixes> <suffix> — first defined function among the prefixes
+_resolve_step() {
+  local prefixes="$1"
+  local suffix="$2"
+  local prefix
+  for prefix in $prefixes; do
+    if declare -f "${prefix}${suffix}" >/dev/null 2>&1; then
+      echo "${prefix}${suffix}"
+      return 0
+    fi
+  done
+  return 0  # an undefined step is not an error — the caller skips it
+}
+
+# _run_pkg_dispatch <app> <install|upgrade>
+# Sources install.sh (and, in upgrade mode, upgrade.sh) and runs one package
+# manager step followed by the plain step. In upgrade mode an upgrade_* function
+# replaces its install_* counterpart; whatever is not overridden runs with the
+# require_* helpers in upgrade mode.
+_run_pkg_dispatch() {
   local app="$1"
+  local mode="$2"
   local install_script="$APP_DIR/install.sh"
+  local upgrade_script="$APP_DIR/upgrade.sh"
 
   if [[ ! -f "$install_script" ]]; then
     return 0
   fi
 
-  # Source install.sh to get function definitions
-  # Unset any previously defined functions first
-  unset -f install_brew install_apt install_pacman install 2>/dev/null || true
+  # Unset functions left behind by a previously dispatched app
+  unset -f install_brew install_apt install_pacman install \
+           upgrade_brew upgrade_apt upgrade_pacman upgrade 2>/dev/null || true
   source "$install_script"
 
-  local ran=false
+  local prefixes="install"
+  if [[ "$mode" == "upgrade" ]]; then
+    [[ -f "$upgrade_script" ]] && source "$upgrade_script"
+    prefixes="upgrade install"
+    pkg_set_mode upgrade
+  fi
+
+  local ran=false fn
 
   # Step 1: brew
-  if declare -f install_brew >/dev/null 2>&1 && is_brew; then
-    install_brew
+  fn=$(_resolve_step "$prefixes" "_brew")
+  if [[ -n "$fn" ]] && is_brew; then
+    "$fn"
     ran=true
   fi
 
   # Step 2: pacman (only if brew didn't run)
   if [[ "$ran" == false ]]; then
-    if declare -f install_pacman >/dev/null 2>&1 && is_pacman; then
-      install_pacman
+    fn=$(_resolve_step "$prefixes" "_pacman")
+    if [[ -n "$fn" ]] && is_pacman; then
+      "$fn"
       ran=true
     fi
   fi
 
   # Step 3: apt (only if nothing above ran)
   if [[ "$ran" == false ]]; then
-    if declare -f install_apt >/dev/null 2>&1 && is_apt; then
-      install_apt
+    fn=$(_resolve_step "$prefixes" "_apt")
+    if [[ -n "$fn" ]] && is_apt; then
+      "$fn"
       ran=true
     fi
   fi
 
-  # Step 4: install (always, after package manager step)
-  if declare -f install >/dev/null 2>&1; then
-    install
+  # Step 4: plain step (always, after the package manager step)
+  fn=$(_resolve_step "$prefixes" "")
+  if [[ -n "$fn" ]]; then
+    "$fn"
     ran=true
   fi
 
+  pkg_set_mode install
+
   if [[ "$ran" == false ]]; then
-    error "install.sh exists but no install method ran for $app"
-    exit 1
+    if [[ "$mode" == "install" ]]; then
+      error "install.sh exists but no install method ran for $app"
+      exit 1
+    fi
+    warn "$app: no upgrade path on this system"
   fi
 }
 
@@ -314,7 +384,7 @@ cmd_install() {
   fi
 
   # Run install dispatch
-  _run_install_dispatch "$app"
+  _run_pkg_dispatch "$app" "install"
 
   if [[ "$APP_TYPE" != "action" ]]; then
     # Reconcile config links
@@ -415,6 +485,86 @@ cmd_remove() {
   ok "$app removed"
 }
 
+# Apps already upgraded this run — also breaks cycles in APP_DEPS
+_UPGRADED=""
+_UPGRADE_DEPS_ALL=false
+
+_upgrade_deps() {
+  local app="$1"
+  local deps=("${APP_DEPS[@]+"${APP_DEPS[@]}"}")
+
+  local dep
+  for dep in "${deps[@]+"${deps[@]}"}"; do
+    case " $_UPGRADED " in *" $dep "*) continue ;; esac
+    _app_supports_os "$dep" || continue
+
+    if ! _app_present "$dep"; then
+      warn "Dependency '$dep' is not installed — run: dotfiles install $dep"
+      continue
+    fi
+
+    if [[ "$_UPGRADE_DEPS_ALL" == false ]]; then
+      if [[ ! -t 0 ]]; then
+        info "Skipping dependency '$dep' — non-interactive"
+        continue
+      fi
+      local reply
+      printf "  Upgrade dependency '%s' too? [y/N/a] " "$dep"
+      read -r reply
+      if [[ "$reply" =~ ^[Aa]$ ]]; then
+        _UPGRADE_DEPS_ALL=true
+      elif [[ ! "$reply" =~ ^[Yy]$ ]]; then
+        continue
+      fi
+    fi
+
+    cmd_upgrade "$dep"
+    _load_app "$app"
+  done
+}
+
+cmd_upgrade() {
+  local app="$1"
+  case " $_UPGRADED " in *" $app "*) return 0 ;; esac
+  _UPGRADED="$_UPGRADED $app"
+
+  _load_app "$app"
+
+  if [[ "$APP_OS" != *"$(os_name)"* ]]; then
+    info "Skipping $app — $APP_OS only"
+    return 0
+  fi
+
+  _upgrade_deps "$app"
+
+  if [[ ! -f "$APP_DIR/install.sh" ]]; then
+    info "Skipping $app — nothing to upgrade"
+    return 0
+  fi
+
+  step "Upgrading $app"
+  _run_pkg_dispatch "$app" "upgrade"
+  ok "$app upgraded"
+}
+
+cmd_upgrade_all() {
+  local apps_dir="$DOTFILES_DIR/apps"
+  local app found=false
+
+  for app_dir in "$apps_dir"/*/; do
+    [[ -f "$app_dir/meta.sh" ]] || continue
+    app=$(basename "$app_dir")
+    [[ "$(state_get_status "$app")" == "configured" ]] || continue
+    _app_supports_os "$app" || continue
+    found=true
+    cmd_upgrade "$app"
+  done
+
+  if [[ "$found" == false ]]; then
+    info "No configured apps to upgrade"
+  fi
+}
+
 cmd_update() {
   step "Updating dotfiles"
   cd "$DOTFILES_DIR"
@@ -505,6 +655,13 @@ case "$CMD" in
   config)
     [[ -n "$APP" ]] || { error "Usage: dotfiles config <app>"; exit 1; }
     cmd_config "$APP"
+    ;;
+  upgrade)
+    if [[ -n "$APP" ]]; then
+      cmd_upgrade "$APP"
+    else
+      cmd_upgrade_all
+    fi
     ;;
   remove)
     [[ -n "$APP" ]] || { error "Usage: dotfiles remove <app>"; exit 1; }

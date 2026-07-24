@@ -2,16 +2,16 @@
   "env": {
     "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"
   },
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
   "permissions": {
     "allow": [
       "mcp__codegraph__*"
     ]
   },
   "model": "opus",
-  "attribution": {
-    "commit": "",
-    "pr": ""
-  },
   "hooks": {
     "PreToolUse": [
       {
@@ -44,6 +44,7 @@
     "remember@claude-plugins-official": true,
     "gopls-lsp@claude-plugins-official": true
   },
+  "effortLevel": "high",
   "tui": "default",
   "autoMemoryEnabled": false,
   "theme": "dark-ansi",

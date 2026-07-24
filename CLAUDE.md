@@ -23,6 +23,8 @@ feature needs them; hold the clean-code bar and add tests for any `lib/` change.
 |---|---|
 | `dotfiles install <app>` | install dispatch → reconcile links → `config.sh` |
 | `dotfiles config <app>`  | verify `APP_BINARY` → reconcile links → `config.sh` |
+| `dotfiles upgrade <app>` | prompt per dep → upgrade dispatch (no links, no `config.sh`) |
+| `dotfiles upgrade`       | same, for every app with `status: configured` |
 | `dotfiles remove <app>`  | unlink → revert backups → `remove.sh` |
 | `dotfiles update`        | `git pull` only |
 | `dotfiles list`          | all apps with OS tag + status |
@@ -34,7 +36,8 @@ feature needs them; hold the clean-code bar and add tests for any `lib/` change.
 ```
 apps/<n>/
   meta.sh       # required — metadata only, no side effects
-  install.sh    # optional — install_brew / install_apt / install
+  install.sh    # optional — install_brew / install_pacman / install_apt / install
+  upgrade.sh    # optional — overrides individual install.sh steps on upgrade
   config.sh     # optional — post-link script
   remove.sh     # optional — post-unlink script
   config/       # optional — files symlinked into $HOME
@@ -58,7 +61,9 @@ NVIM_PLUGIN_DIR="..."         # app-private vars — prefix with app name
 - `APP_CONFIGS` entry: `"src : dst"` or `"src : dst : os_tag"`. `src` is
   relative to the app dir; `dst` supports `~`; `os_tag` is `macos` or `linux`.
 - `APP_DEPS` prompts `[y/N/a]` per missing dep; `a` = yes-to-all; any `N` aborts.
-  Each dep installs via the full `cmd_install` flow.
+  Each dep installs via the full `cmd_install` flow. A dep counts as present when
+  its `APP_BINARY` is on `PATH`, or — for deps with no binary — when its state
+  status is `configured`. Deps not supported on the current OS are skipped.
 - Defaults if omitted: `APP_OS="macos,linux"`, `APP_BINARY=""`, `APP_TYPE=""`,
   `APP_DEPS=()`, `APP_CONFIGS=()`.
 - `APP_TYPE="action"`: skips state, reconciliation, and `remove`; shows `~ Action` in `dotfiles list`. For one-shot apps with no managed links.
@@ -67,10 +72,31 @@ NVIM_PLUGIN_DIR="..."         # app-private vars — prefix with app name
 ### `install.sh` dispatch
 
 1. `install_brew` defined + brew present → call; hard-fail on error.
-2. else `install_apt` defined + apt present → call; hard-fail on error.
-3. then `install` defined → call; hard-fail on error.
-4. File exists but nothing ran → hard-fail.
-5. File missing → skip silently (valid for config-only apps).
+2. else `install_pacman` defined + pacman present → call; hard-fail on error.
+3. else `install_apt` defined + apt present → call; hard-fail on error.
+4. then `install` defined → call; hard-fail on error.
+5. File exists but nothing ran → hard-fail.
+6. File missing → skip silently (valid for config-only apps).
+
+### `upgrade.sh` — only when `install.sh` cannot upgrade itself
+
+`dotfiles upgrade` re-runs **`install.sh`** with `lib/pkg.sh` in upgrade mode, so
+every `require_*` call upgrades instead of skipping. Most apps need no
+`upgrade.sh` at all.
+
+Write one only when a step is hand-rolled and self-guarding (`command_exists x &&
+return`), which makes it a no-op on upgrade. It defines `upgrade_brew` /
+`upgrade_pacman` / `upgrade_apt` / `upgrade`; each **replaces just that slot**,
+and any slot it does not define falls back to the `install_*` counterpart running
+in upgrade mode. Same dispatch order as `install.sh`. Sourced after `install.sh`,
+so helpers defined there are in scope — factor shared logic into a `_app_*`
+function rather than copying it.
+
+- `install.sh` missing → the app is skipped; nothing to upgrade.
+- Upgrade never touches symlinks, `config.sh`, or state. Run `dotfiles config
+  <app>` afterwards if an upgrade changed what the config must look like.
+- Custom install code can branch on `pkg_upgrading` instead of shipping an
+  `upgrade.sh` when the difference is a single guard.
 
 ### `config.sh` / `remove.sh`
 
@@ -116,7 +142,7 @@ arbitrary data. **All reads/writes go through `lib/state.sh`.**
 | `lib/utils.sh` | `command_exists`, `ensure_dir`, `download_file`, `add_line_to_file`, `is_ci` |
 | `lib/link.sh`  | `safe_link`, `safe_unlink` |
 | `lib/state.sh` | all state read/write (jq-based) |
-| `lib/pkg.sh`   | `require_brew[_cask/_tap]`, `require_apt`, `require_cargo`, `require_go`, `require_pip`, `require_gh_release`, `require_script` (all idempotent) |
+| `lib/pkg.sh`   | `require_brew[_cask/_tap]`, `require_apt`, `require_pacman`, `require_cargo`, `require_go`, `require_npm`, `require_pip`, `require_gh_release`, `require_script` (all idempotent); `pkg_set_mode`, `pkg_upgrading` |
 
 ---
 
@@ -193,8 +219,9 @@ the work is done. Tests live in `tests/test_<module>.sh` and run via
 2. `install.sh` if a package must be installed (prefer `require_*`).
 3. `config/` mirroring `$HOME` for files that symlink in.
 4. `config.sh` / `remove.sh` only if post-link setup is needed.
-5. Verify: `dotfiles install <n>` → `dotfiles config <n>` → `dotfiles remove <n>`,
-   then `dotfiles list`.
+5. `upgrade.sh` only if an `install.sh` step cannot upgrade itself.
+6. Verify: `dotfiles install <n>` → `dotfiles config <n>` → `dotfiles upgrade <n>`
+   → `dotfiles remove <n>`, then `dotfiles list`.
 
 ---
 
@@ -202,7 +229,9 @@ the work is done. Tests live in `tests/test_<module>.sh` and run via
 
 - No package uninstall — `remove` only unlinks.
 - No `install all` or profiles.
-- `update` is `git pull` only — no auto-reconfig.
+- `update` is `git pull` only — no auto-reconfig. `upgrade` is the app-level one.
+- `upgrade` needs an interactive TTY to prompt for deps; non-interactive runs
+  upgrade the named app only.
 - `bin/dotfiles` is always a symlink.
 - `install.sh` uses `$SUDO_USER` to resolve the real home under sudo.
 - Distro-level branching lives in `install.sh` — never in `meta.sh`.

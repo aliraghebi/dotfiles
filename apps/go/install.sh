@@ -5,12 +5,14 @@ install_brew() {
   require_brew go
 }
 
-install() {
-  is_macos && return 0
-  command_exists go || [[ -x "/usr/local/go/bin/go" ]] && { info "go already installed"; return 0; }
+_go_latest_version() {
+  curl -fsSL "https://go.dev/VERSION?m=text" | head -1
+}
 
-  local version arch
-  version=$(curl -fsSL "https://go.dev/VERSION?m=text" | head -1)
+# _go_install_linux <version> — replaces /usr/local/go with the given release
+_go_install_linux() {
+  local version="$1"
+  local arch
   arch=$(cpu_arch)
 
   if [[ "$arch" != "amd64" && "$arch" != "arm64" ]]; then
@@ -31,4 +33,11 @@ install() {
   sudo tar -C /usr/local -xzf "${tmp}/${archive}"
 
   ok "${version} installed"
+}
+
+install() {
+  is_macos && return 0
+  command_exists go || [[ -x "/usr/local/go/bin/go" ]] && { info "go already installed"; return 0; }
+
+  _go_install_linux "$(_go_latest_version)"
 }

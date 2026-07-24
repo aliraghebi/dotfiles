@@ -30,6 +30,7 @@ dotfiles <command> [app]
 
   install <app>   Install and configure an app
   config  <app>   Configure an app (must already be installed)
+  upgrade [app]   Upgrade an app to the latest version (no app = all configured)
   remove  <app>   Remove an app's config links
   update          Pull latest dotfiles from git
   list            List all apps and their status
@@ -41,9 +42,15 @@ dotfiles <command> [app]
 dotfiles list              # see all apps and their status
 dotfiles install neovim    # install + symlink config
 dotfiles config zsh        # re-apply config links for zsh
+dotfiles upgrade neovim    # upgrade neovim, prompting per dependency
+dotfiles upgrade           # upgrade every configured app
 dotfiles remove kitty      # remove symlinks, restore any backups
 dotfiles update            # git pull latest
 ```
+
+`upgrade` touches software only — it never re-links configs or runs `config.sh`.
+For each entry in the app's `APP_DEPS` it asks `[y/N/a]` before upgrading that
+dependency too.
 
 ## Apps
 
