@@ -90,9 +90,13 @@ defaults write com.apple.menuextra.clock ShowAMPM -bool false
 defaults write com.apple.menuextra.clock FlashDateSeparators -bool false
 defaults write com.apple.menuextra.clock ShowSeconds -bool true
 
+
+# ── Control Center ────────────────────────────────────────────────────────────
+# Sound: always show in menu bar
+defaults -currentHost write com.apple.controlcenter Sound -int 3
+
 # ── Battery: show in menu bar & control center, with percentage ───────────────
 defaults -currentHost write com.apple.controlcenter Battery -int 3
-defaults write com.apple.controlcenter "NSStatusItem Visible Battery" -bool true
 defaults -currentHost write com.apple.controlcenter BatteryShowPercentage -bool true
 
 # ── Finder ────────────────────────────────────────────────────────────────────
