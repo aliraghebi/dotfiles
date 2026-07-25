@@ -7,6 +7,12 @@ _install_nerd_font() {
 
   if [[ -d "$font_dir" ]] && [[ -n "$(ls -A "$font_dir" 2>/dev/null)" ]] && ! pkg_upgrading; then
     info "${font_name} nerd font already installed"
+    # .version is written only here, so its presence proves the dir is ours
+    if [[ -f "${font_dir}/.version" ]]; then
+      pkg_record path "$font_dir"
+    else
+      pkg_record path "$font_dir" false
+    fi
     return 0
   fi
 
@@ -21,6 +27,7 @@ _install_nerd_font() {
 
   if [[ -f "${font_dir}/.version" ]] && [[ "$(cat "${font_dir}/.version")" == "$version" ]]; then
     info "${font_name} nerd font already at ${version}"
+    pkg_record path "$font_dir"
     return 0
   fi
 
@@ -39,6 +46,7 @@ _install_nerd_font() {
   unzip -qo "${temp_dir}/font.zip" -d "$font_dir"
   rm -rf "$temp_dir"
   echo "$version" > "${font_dir}/.version"
+  pkg_record path "$font_dir"
   ok "Installed ${font_name} nerd font ${version}"
 }
 

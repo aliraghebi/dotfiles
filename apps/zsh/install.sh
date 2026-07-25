@@ -12,37 +12,35 @@ install_apt() {
   require_apt zsh
 }
 
+# _zsh_require_plugin <name> <repo-url> — clone into ZSH_CUSTOM, record the dir
+_zsh_require_plugin() {
+  local name="$1"
+  local url="$2"
+  local dir="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/${name}"
+
+  if [[ ! -d "$dir" ]]; then
+    info "Installing $name"
+    git clone "$url" "$dir"
+    pkg_record path "$dir"
+  else
+    info "$name already installed"
+    pkg_record path "$dir" false
+  fi
+}
+
 install() {
   if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
     info "Installing oh-my-zsh"
     RUNZSH=no CHSH=no require_script "https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh"
+    pkg_record path "$HOME/.oh-my-zsh"
   else
     info "oh-my-zsh already installed"
+    pkg_record path "$HOME/.oh-my-zsh" false
   fi
 
-  local plugin_dir="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-autosuggestions"
-  if [[ ! -d "$plugin_dir" ]]; then
-    info "Installing zsh-autosuggestions"
-    git clone https://github.com/zsh-users/zsh-autosuggestions "$plugin_dir"
-  else
-    info "zsh-autosuggestions already installed"
-  fi
-
-  local syntax_dir="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting"
-  if [[ ! -d "$syntax_dir" ]]; then
-    info "Installing zsh-syntax-highlighting"
-    git clone https://github.com/zsh-users/zsh-syntax-highlighting "$syntax_dir"
-  else
-    info "zsh-syntax-highlighting already installed"
-  fi
-
-  local history_dir="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-history-substring-search"
-  if [[ ! -d "$history_dir" ]]; then
-    info "Installing zsh-history-substring-search"
-    git clone https://github.com/zsh-users/zsh-history-substring-search "$history_dir"
-  else
-    info "zsh-history-substring-search already installed"
-  fi
+  _zsh_require_plugin zsh-autosuggestions https://github.com/zsh-users/zsh-autosuggestions
+  _zsh_require_plugin zsh-syntax-highlighting https://github.com/zsh-users/zsh-syntax-highlighting
+  _zsh_require_plugin zsh-history-substring-search https://github.com/zsh-users/zsh-history-substring-search
 
   local zsh_path
   zsh_path=$(command -v zsh 2>/dev/null || true)

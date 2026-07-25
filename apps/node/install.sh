@@ -17,12 +17,13 @@ install() {
     info "node already installed"
   fi
 
-  if command_exists pnpm; then
-    info "pnpm already installed"
-    return 0
-  fi
+  # The setup script drops these; they are ours to clean up
+  local artifact
+  for artifact in /etc/apt/sources.list.d/nodesource.list /etc/apt/keyrings/nodesource.gpg; do
+    if [[ -f "$artifact" ]]; then
+      pkg_record root_path "$artifact"
+    fi
+  done
 
-  info "Installing pnpm via npm"
-  npm install -g pnpm
-  ok "pnpm installed"
+  require_npm pnpm
 }

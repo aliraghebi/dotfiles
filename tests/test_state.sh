@@ -127,6 +127,87 @@ test_state_remove_backup() {
   assert_equals "0" "$count"
 }
 
+# ── state_add_artifact / state_get_artifacts ──
+
+test_state_add_artifact_records_kind_id_and_owner() {
+  _setup; trap _teardown RETURN
+  state_add_artifact "btop" "brew" "btop" "true"
+  local entry
+  entry=$(state_get_artifacts "btop" | jq -c '.[0]')
+  assert_equals '{"kind":"brew","id":"btop","owned":true}' "$entry"
+}
+
+test_state_add_artifact_creates_missing_app_entry() {
+  _setup; trap _teardown RETURN
+  state_add_artifact "btop" "brew" "btop" "true"
+  assert_equals "configuring" "$(state_get_status "btop")"
+}
+
+test_state_add_artifact_keeps_insertion_order() {
+  _setup; trap _teardown RETURN
+  state_add_artifact "node" "apt" "nodejs" "true"
+  state_add_artifact "node" "npm" "pnpm" "true"
+  local ids
+  ids=$(state_get_artifacts "node" | jq -r '[.[].id] | join(",")')
+  assert_equals "nodejs,pnpm" "$ids"
+}
+
+test_state_add_artifact_is_idempotent() {
+  _setup; trap _teardown RETURN
+  state_add_artifact "btop" "brew" "btop" "true"
+  state_add_artifact "btop" "brew" "btop" "true"
+  assert_equals "1" "$(state_get_artifacts "btop" | jq 'length')"
+}
+
+test_state_add_artifact_never_downgrades_ownership() {
+  _setup; trap _teardown RETURN
+  state_add_artifact "btop" "brew" "btop" "true"
+  state_add_artifact "btop" "brew" "btop" "false"
+  assert_equals "true" "$(state_get_artifacts "btop" | jq -r '.[0].owned')"
+}
+
+test_state_add_artifact_separates_same_id_across_kinds() {
+  _setup; trap _teardown RETURN
+  state_add_artifact "go" "brew" "go" "true"
+  state_add_artifact "go" "root_path" "go" "true"
+  assert_equals "2" "$(state_get_artifacts "go" | jq 'length')"
+}
+
+test_state_add_artifact_rejects_non_boolean_owned() {
+  _setup; trap _teardown RETURN
+  assert_retval 1 state_add_artifact "btop" "brew" "btop" "yes"
+}
+
+test_state_get_artifacts_empty_for_unknown_app() {
+  _setup; trap _teardown RETURN
+  assert_equals "[]" "$(state_get_artifacts "nope")"
+}
+
+test_state_get_artifacts_empty_for_app_without_field() {
+  _setup; trap _teardown RETURN
+  state_set_status "git" "configured"
+  assert_equals "[]" "$(state_get_artifacts "git")"
+}
+
+# ── state_remove_artifact ──
+
+test_state_remove_artifact_removes_only_the_match() {
+  _setup; trap _teardown RETURN
+  state_add_artifact "node" "apt" "nodejs" "true"
+  state_add_artifact "node" "npm" "pnpm" "true"
+  state_remove_artifact "node" "apt" "nodejs"
+  local ids
+  ids=$(state_get_artifacts "node" | jq -r '[.[].id] | join(",")')
+  assert_equals "pnpm" "$ids"
+}
+
+test_state_remove_artifact_is_safe_for_unknown_app() {
+  _setup; trap _teardown RETURN
+  _state_ensure_file
+  state_remove_artifact "nope" "brew" "nope"
+  assert_equals "[]" "$(state_get_artifacts "nope")"
+}
+
 # ── state_remove_app ──
 
 test_state_remove_app() {

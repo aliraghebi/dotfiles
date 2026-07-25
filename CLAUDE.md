@@ -26,6 +26,7 @@ feature needs them; hold the clean-code bar and add tests for any `lib/` change.
 | `dotfiles upgrade <app>` | prompt per dep → upgrade dispatch (no links, no `config.sh`) |
 | `dotfiles upgrade`       | same, for every app with `status: configured` |
 | `dotfiles remove <app>`  | unlink → revert backups → `remove.sh` |
+| `dotfiles uninstall <app>` | show plan → warn dependents → confirm → unlink → revert backups → `remove.sh` → `uninstall.sh` → reverse recorded artifacts |
 | `dotfiles update`        | `git pull` only |
 | `dotfiles list`          | all apps with OS tag + status |
 
@@ -38,6 +39,7 @@ apps/<n>/
   meta.sh       # required — metadata only, no side effects
   install.sh    # optional — install_brew / install_pacman / install_apt / install
   upgrade.sh    # optional — overrides individual install.sh steps on upgrade
+  uninstall.sh  # optional — extra cleanup on uninstall, before artifacts go
   config.sh     # optional — post-link script
   remove.sh     # optional — post-unlink script
   config/       # optional — files symlinked into $HOME
@@ -98,6 +100,46 @@ function rather than copying it.
 - Custom install code can branch on `pkg_upgrading` instead of shipping an
   `upgrade.sh` when the difference is a single guard.
 
+### Artifacts — how uninstall knows what to remove
+
+**`dotfiles uninstall` never runs `install.sh`.** Install code must never
+execute while removing something. Instead, installing *records* what it put on
+the machine, and uninstall reverses those records newest-first.
+
+Every `require_*` records its own artifact automatically — apps get this for
+free. Hand-rolled install steps record theirs with `pkg_record <kind> <id>
+[owned]`:
+
+```bash
+git clone "$url" "$dir"
+pkg_record path "$dir"                    # owned defaults to true
+pkg_record root_path /usr/local/go        # needs sudo to remove
+pkg_record apt docker-ce false            # already there before us
+```
+
+- Kinds: `brew`, `brew_cask`, `apt`, `pacman`, `cargo`, `npm`, `pip`, `path`,
+  `root_path`. `pkg_remove_artifact` in `lib/pkg.sh` owns the reverse of each —
+  add a kind there, never inline a removal in an app.
+- `owned=false` means it was already installed when we got there. It does not
+  block removal — the confirm prompt lists it, flagged, and the user decides.
+- Re-recording the same `(kind, id)` is a no-op, so `install` stays idempotent
+  and a re-run never downgrades ownership.
+- `require_script` records nothing — a vendor script can drop anything. The
+  caller records what it knows (`apps/starship/install.sh`).
+- Apps configured before artifacts existed have no records; `uninstall` says so
+  and removes links only. Re-running `install` re-records them.
+
+### `uninstall.sh` — side effects only
+
+A plain script, same shape as `remove.sh` (no functions, no dispatch). Sourced
+during `uninstall`, **before** artifacts are removed, so the software is still
+present. Only for side effects that are not artifacts — `apps/zsh/uninstall.sh`
+puts the login shell back before zsh is deleted. Anything that is a file, a
+directory, or a package belongs in `pkg_record`, not here.
+
+Uninstall does **not** touch dependencies — it only warns which configured apps
+still list this one in `APP_DEPS`.
+
 ### `config.sh` / `remove.sh`
 
 Plain scripts, no functions, no state writes. All `lib/*` helpers in scope.
@@ -124,12 +166,14 @@ Each action writes state immediately — never batched.
 
 ```json
 { "nvim": { "status": "configured", "configured_at": "...",
-  "links": [ { "src": "...", "dst": "..." } ], "backups": [] } }
+  "links": [ { "src": "...", "dst": "..." } ], "backups": [],
+  "artifacts": [ { "kind": "brew", "id": "neovim", "owned": true } ] } }
 ```
 
 `status`: `configured` | `configuring` | `removing`.
-Only `links` and `backups` are tracked — never `config.sh` outcomes, never
-arbitrary data. **All reads/writes go through `lib/state.sh`.**
+Only `links`, `backups` and `artifacts` are tracked — never `config.sh`
+outcomes, never arbitrary data. `artifacts` is append-ordered; uninstall walks
+it in reverse. **All reads/writes go through `lib/state.sh`.**
 
 ---
 
@@ -142,7 +186,7 @@ arbitrary data. **All reads/writes go through `lib/state.sh`.**
 | `lib/utils.sh` | `command_exists`, `ensure_dir`, `download_file`, `add_line_to_file`, `is_ci` |
 | `lib/link.sh`  | `safe_link`, `safe_unlink` |
 | `lib/state.sh` | all state read/write (jq-based) |
-| `lib/pkg.sh`   | `require_brew[_cask/_tap]`, `require_apt`, `require_pacman`, `require_cargo`, `require_go`, `require_npm`, `require_pip`, `require_gh_release`, `require_script` (all idempotent); `brew_cask_installed`, `pkg_set_mode`, `pkg_upgrading` |
+| `lib/pkg.sh`   | `require_brew[_cask/_tap]`, `require_apt`, `require_pacman`, `require_cargo`, `require_go`, `require_npm`, `require_pip`, `require_gh_release`, `require_script` (all idempotent); `brew_cask_installed`, `pkg_set_mode`, `pkg_upgrading`, `pkg_set_app`, `pkg_record`, `pkg_remove_artifact` |
 
 ---
 
@@ -219,7 +263,9 @@ the work is done. Tests live in `tests/test_<module>.sh` and run via
 2. `install.sh` if a package must be installed (prefer `require_*`).
 3. `config/` mirroring `$HOME` for files that symlink in.
 4. `config.sh` / `remove.sh` only if post-link setup is needed.
-5. `upgrade.sh` only if an `install.sh` step cannot upgrade itself.
+5. `upgrade.sh` only if an `install.sh` step cannot upgrade itself;
+   `uninstall.sh` only for a side effect that is not an artifact.
+   Any hand-rolled install step must `pkg_record` what it leaves behind.
 6. Verify: `dotfiles install <n>` → `dotfiles config <n>` → `dotfiles upgrade <n>`
    → `dotfiles remove <n>`, then `dotfiles list`.
 
@@ -227,7 +273,7 @@ the work is done. Tests live in `tests/test_<module>.sh` and run via
 
 ## Known constraints
 
-- No package uninstall — `remove` only unlinks.
+- `remove` only unlinks; `uninstall` also removes the package.
 - No `install all` or profiles.
 - `update` is `git pull` only — no auto-reconfig. `upgrade` is the app-level one.
 - `upgrade` needs an interactive TTY to prompt for deps; non-interactive runs

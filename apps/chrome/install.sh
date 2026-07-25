@@ -19,7 +19,9 @@ install() {
     | sudo gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg
   echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
     | sudo tee /etc/apt/sources.list.d/google-chrome.list > /dev/null
+  pkg_record root_path /usr/share/keyrings/google-chrome.gpg
+  pkg_record root_path /etc/apt/sources.list.d/google-chrome.list
+
   sudo apt-get update -y
-  sudo apt-get install -y google-chrome-stable
-  ok "google-chrome-stable installed"
+  require_apt google-chrome-stable
 }

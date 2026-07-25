@@ -48,12 +48,13 @@ _usage() {
 Usage: dotfiles <command> [app]
 
 Commands:
-  install <app>   Install and configure an app
-  config  <app>   Configure an app (must already be installed)
-  upgrade [app]   Upgrade an app to the latest version (no app = all configured)
-  remove  <app>   Remove an app's config links
-  update          Pull latest dotfiles from git
-  list            List all apps and their status
+  install   <app>   Install and configure an app
+  config    <app>   Configure an app (must already be installed)
+  upgrade   [app]   Upgrade an app to the latest version (no app = all configured)
+  remove    <app>   Remove an app's config links
+  uninstall <app>   Remove an app's config links and uninstall its software
+  update            Pull latest dotfiles from git
+  list              List all apps and their status
 EOF
 }
 
@@ -89,7 +90,9 @@ _meta_field() {
     APP_OS="macos,linux"
     APP_BINARY=""
     source "$meta"
-    eval "printf '%s' \"\${$var}\""
+    # `-` keeps set -u quiet for a var the meta.sh never declares — in bash 3.2
+    # an empty array counts as unset too
+    eval "printf '%s' \"\${$var-}\""
   )
 }
 
@@ -300,6 +303,7 @@ _resolve_step() {
 # manager step followed by the plain step. In upgrade mode an upgrade_* function
 # replaces its install_* counterpart; whatever is not overridden runs with the
 # require_* helpers in upgrade mode.
+# Uninstall never comes through here — it reverses recorded artifacts instead.
 _run_pkg_dispatch() {
   local app="$1"
   local mode="$2"
@@ -314,6 +318,9 @@ _run_pkg_dispatch() {
   unset -f install_brew install_apt install_pacman install \
            upgrade_brew upgrade_apt upgrade_pacman upgrade 2>/dev/null || true
   source "$install_script"
+
+  # Everything a require_* installs from here on is recorded against this app
+  pkg_set_app "$app"
 
   local prefixes="install"
   if [[ "$mode" == "upgrade" ]]; then
@@ -357,6 +364,7 @@ _run_pkg_dispatch() {
   fi
 
   pkg_set_mode install
+  pkg_set_app ""
 
   if [[ "$ran" == false ]]; then
     if [[ "$mode" == "install" ]]; then
@@ -437,20 +445,10 @@ cmd_config() {
   ok "$app configured"
 }
 
-cmd_remove() {
+# _unlink_all <app> — remove every tracked symlink and revert its backup
+_unlink_all() {
   local app="$1"
-  _load_app "$app"
 
-  if [[ "$APP_TYPE" == "action" ]]; then
-    error "$app is an action app — nothing to remove"
-    exit 1
-  fi
-
-  step "Removing $app"
-
-  state_set_status "$app" "removing"
-
-  # Remove all tracked symlinks and revert backups
   local links_json
   links_json=$(state_get_links "$app")
 
@@ -474,6 +472,21 @@ cmd_remove() {
       fi
     done < <(echo "$backups_json" | jq -c '.[]' 2>/dev/null || true)
   done < <(echo "$links_json" | jq -c '.[]' 2>/dev/null || true)
+}
+
+cmd_remove() {
+  local app="$1"
+  _load_app "$app"
+
+  if [[ "$APP_TYPE" == "action" ]]; then
+    error "$app is an action app — nothing to remove"
+    exit 1
+  fi
+
+  step "Removing $app"
+
+  state_set_status "$app" "removing"
+  _unlink_all "$app"
 
   # Run remove.sh if present
   local remove_script="$APP_DIR/remove.sh"
@@ -483,6 +496,101 @@ cmd_remove() {
 
   state_remove_app "$app"
   ok "$app removed"
+}
+
+# _dependents <app> — configured apps that list <app> in their APP_DEPS
+_dependents() {
+  local app="$1"
+  local other other_dir deps
+  for other_dir in "$DOTFILES_DIR"/apps/*/; do
+    [[ -f "$other_dir/meta.sh" ]] || continue
+    other=$(basename "$other_dir")
+    [[ "$other" == "$app" ]] && continue
+    [[ "$(state_get_status "$other")" == "configured" ]] || continue
+    deps=$(_meta_field "$other" 'APP_DEPS[*]')
+    case " $deps " in *" $app "*) echo "$other" ;; esac
+  done
+}
+
+cmd_uninstall() {
+  local app="$1"
+  _load_app "$app"
+
+  if [[ "$APP_TYPE" == "action" ]]; then
+    error "$app is an action app — nothing to uninstall"
+    exit 1
+  fi
+
+  step "Uninstalling $app"
+
+  # Everything to be removed is read from state — install.sh is never run
+  local artifacts_json
+  artifacts_json=$(state_get_artifacts "$app")
+
+  if [[ "$(echo "$artifacts_json" | jq 'length')" == "0" ]]; then
+    info "Nothing recorded for $app — config links only"
+    info "(installs made before artifacts were tracked leave no record; re-run 'dotfiles install $app' to record them)"
+  else
+    info "Will remove:"
+    local plan_line
+    while IFS= read -r plan_line; do
+      printf "      %s\n" "$plan_line"
+    done < <(echo "$artifacts_json" | jq -r \
+      '.[] | "\(.kind)  \(.id)" + (if .owned then "" else "   (present before dotfiles)" end)')
+  fi
+
+  local dependents
+  dependents=$(_dependents "$app")
+  if [[ -n "$dependents" ]]; then
+    warn "Still depended on by: $(echo "$dependents" | tr '\n' ' ')"
+  fi
+
+  # Prompt only when there is a terminal to answer; an explicit non-interactive
+  # `dotfiles uninstall <app>` is taken at its word.
+  if [[ -t 0 ]]; then
+    local reply
+    printf "  Uninstall '%s' — remove its config links and everything above? [y/N] " "$app"
+    read -r reply
+    if [[ ! "$reply" =~ ^[Yy]$ ]]; then
+      info "Aborted"
+      exit 0
+    fi
+  fi
+
+  state_set_status "$app" "removing"
+  _unlink_all "$app"
+
+  # Both scripts run while the software is still installed — they may need it
+  local remove_script="$APP_DIR/remove.sh"
+  if [[ -f "$remove_script" ]]; then
+    source "$remove_script"
+  fi
+  local uninstall_script="$APP_DIR/uninstall.sh"
+  if [[ -f "$uninstall_script" ]]; then
+    source "$uninstall_script"
+  fi
+
+  # Reverse order: later artifacts may have been installed by earlier ones.
+  # One failure must not strand the rest — keep going and report at the end.
+  local entry kind id failed=false
+  while IFS= read -r entry; do
+    kind=$(echo "$entry" | jq -r '.kind')
+    id=$(echo "$entry" | jq -r '.id')
+    if pkg_remove_artifact "$kind" "$id"; then
+      state_remove_artifact "$app" "$kind" "$id"
+    else
+      warn "Leaving $kind $id in place"
+      failed=true
+    fi
+  done < <(echo "$artifacts_json" | jq -c 'reverse | .[]' 2>/dev/null || true)
+
+  if [[ "$failed" == true ]]; then
+    warn "$app partially uninstalled — fix the above and re-run: dotfiles uninstall $app"
+    return 0
+  fi
+
+  state_remove_app "$app"
+  ok "$app uninstalled"
 }
 
 # Apps already upgraded this run — also breaks cycles in APP_DEPS
@@ -509,11 +617,11 @@ _upgrade_deps() {
         continue
       fi
       local reply
-      printf "  Upgrade dependency '%s' too? [y/N/a] " "$dep"
+      printf "  Upgrade dependency '%s' too? [Y/n/a] " "$dep"
       read -r reply
       if [[ "$reply" =~ ^[Aa]$ ]]; then
         _UPGRADE_DEPS_ALL=true
-      elif [[ ! "$reply" =~ ^[Yy]$ ]]; then
+      elif [[ "$reply" =~ ^[Nn]$ ]]; then
         continue
       fi
     fi
@@ -666,6 +774,10 @@ case "$CMD" in
   remove)
     [[ -n "$APP" ]] || { error "Usage: dotfiles remove <app>"; exit 1; }
     cmd_remove "$APP"
+    ;;
+  uninstall)
+    [[ -n "$APP" ]] || { error "Usage: dotfiles uninstall <app>"; exit 1; }
+    cmd_uninstall "$APP"
     ;;
   update)
     cmd_update

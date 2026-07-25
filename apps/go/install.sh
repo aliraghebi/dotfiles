@@ -31,13 +31,18 @@ _go_install_linux() {
   info "Installing Go to /usr/local/go"
   sudo rm -rf /usr/local/go
   sudo tar -C /usr/local -xzf "${tmp}/${archive}"
+  pkg_record root_path /usr/local/go
 
   ok "${version} installed"
 }
 
 install() {
   is_macos && return 0
-  command_exists go || [[ -x "/usr/local/go/bin/go" ]] && { info "go already installed"; return 0; }
+  command_exists go || [[ -x "/usr/local/go/bin/go" ]] && {
+    info "go already installed"
+    [[ -d /usr/local/go ]] && pkg_record root_path /usr/local/go false
+    return 0
+  }
 
   _go_install_linux "$(_go_latest_version)"
 }

@@ -135,6 +135,58 @@ state_remove_backup() {
   _state_write "$updated"
 }
 
+# state_add_artifact <app> <kind> <id> <owned>
+# Records something an install put on the machine so uninstall can reverse it.
+# <owned> is "true" only when this tool performed the install — a package that
+# was already present is recorded too, but flagged, so uninstall can say so.
+# Re-recording an existing (kind, id) is a no-op: the first answer wins, so a
+# re-run never downgrades ownership.
+state_add_artifact() {
+  local app="$1"
+  local kind="$2"
+  local id="$3"
+  local owned="$4"
+  case "$owned" in
+    true|false) ;;
+    *) error "state_add_artifact: owned must be true or false, got '$owned'"; return 1 ;;
+  esac
+  _state_ensure_file
+  local current
+  current=$(_state_read)
+  local updated
+  updated=$(echo "$current" | jq \
+    --arg app "$app" \
+    --arg kind "$kind" \
+    --arg id "$id" \
+    --argjson owned "$owned" \
+    'if .[$app] then . else .[$app] = {"status": "configuring", "links": [], "backups": []} end
+     | .[$app].artifacts = (.[$app].artifacts // [])
+     | if (.[$app].artifacts | any(.kind == $kind and .id == $id)) then .
+       else .[$app].artifacts += [{"kind": $kind, "id": $id, "owned": $owned}] end')
+  _state_write "$updated"
+}
+
+state_remove_artifact() {
+  local app="$1"
+  local kind="$2"
+  local id="$3"
+  _state_ensure_file
+  local current
+  current=$(_state_read)
+  local updated
+  updated=$(echo "$current" | jq \
+    --arg app "$app" \
+    --arg kind "$kind" \
+    --arg id "$id" \
+    'if .[$app] then .[$app].artifacts = [(.[$app].artifacts // [])[] | select(.kind != $kind or .id != $id)] else . end')
+  _state_write "$updated"
+}
+
+state_get_artifacts() {
+  local app="$1"
+  _state_read | jq -c --arg app "$app" '.[$app].artifacts // []'
+}
+
 state_get_links() {
   local app="$1"
   _state_read | jq -c --arg app "$app" '.[$app].links // []'

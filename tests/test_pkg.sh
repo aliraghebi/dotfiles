@@ -9,7 +9,29 @@ source "$DOTFILES_DIR/lib/log.sh"
 source "$DOTFILES_DIR/lib/utils.sh"
 source "$DOTFILES_DIR/lib/os.sh"
 source "$DOTFILES_DIR/lib/pkg.sh"
+source "$DOTFILES_DIR/lib/state.sh"
 source "$TESTS_DIR/unit.sh"
+
+_tmpdir=""
+_orig_home=""
+
+# Point the state file at a throwaway HOME and name the app being recorded
+_state_setup() {
+  _tmpdir=$(mktemp -d)
+  _orig_home="$HOME"
+  export HOME="$_tmpdir"
+  pkg_set_app "testapp"
+}
+
+_state_teardown() {
+  pkg_set_app ""
+  export HOME="$_orig_home"
+  [[ -n "$_tmpdir" ]] && rm -rf "$_tmpdir"
+}
+
+_artifacts() {
+  state_get_artifacts "testapp"
+}
 
 # ── require_brew idempotency ──
 
@@ -204,6 +226,11 @@ test_pkg_set_mode_rejects_unknown_mode() {
   assert_retval 1 pkg_upgrading
 }
 
+test_pkg_set_mode_rejects_uninstall() {
+  # uninstall is not a package mode — it reverses recorded artifacts instead
+  assert_retval 1 pkg_set_mode "uninstall"
+}
+
 # ── upgrade mode ──
 
 test_require_brew_upgrades_when_installed() {
@@ -387,6 +414,225 @@ test_require_gh_release_refetches_in_upgrade_mode() {
   assert_retval 1 require_gh_release "owner/repo" "somebin"
   unset -f command_exists curl jq
   assert_file_exists "$marker"
+}
+
+# ── artifact recording ──
+
+test_pkg_record_is_a_noop_without_an_app() {
+  _state_setup; trap _state_teardown RETURN
+  pkg_set_app ""
+  pkg_record brew "some-pkg"
+  pkg_set_app "testapp"
+  assert_equals "[]" "$(_artifacts)"
+}
+
+test_pkg_record_defaults_to_owned() {
+  _state_setup; trap _state_teardown RETURN
+  pkg_record brew "some-pkg"
+  assert_equals "true" "$(_artifacts | jq -r '.[0].owned')"
+}
+
+test_require_brew_records_ownership_when_it_installs() {
+  _state_setup; trap _state_teardown RETURN
+  brew() {
+    if [[ "$1" == "list" ]]; then return 1; fi
+    return 0
+  }
+  export -f brew
+  require_brew "some-pkg"
+  unset -f brew
+  assert_equals '{"kind":"brew","id":"some-pkg","owned":true}' "$(_artifacts | jq -c '.[0]')"
+}
+
+test_require_brew_records_preexisting_package_as_unowned() {
+  _state_setup; trap _state_teardown RETURN
+  brew() { return 0; }
+  export -f brew
+  require_brew "some-pkg"
+  unset -f brew
+  assert_equals '{"kind":"brew","id":"some-pkg","owned":false}' "$(_artifacts | jq -c '.[0]')"
+}
+
+test_require_brew_cask_records_cask_kind() {
+  _state_setup; trap _state_teardown RETURN
+  brew() { return 0; }
+  export -f brew
+  require_brew_cask "some-cask"
+  unset -f brew
+  assert_equals "brew_cask" "$(_artifacts | jq -r '.[0].kind')"
+}
+
+test_require_npm_records_base_package_name() {
+  _state_setup; trap _state_teardown RETURN
+  command_exists() { return 1; }
+  npm() { return 0; }
+  export -f command_exists npm
+  require_npm "pnpm@9.1.0" "pnpm"
+  unset -f command_exists npm
+  assert_equals '{"kind":"npm","id":"pnpm","owned":true}' "$(_artifacts | jq -c '.[0]')"
+}
+
+test_require_npm_records_scoped_package_name() {
+  _state_setup; trap _state_teardown RETURN
+  command_exists() { return 1; }
+  npm() { return 0; }
+  export -f command_exists npm
+  require_npm "@colbymchenry/codegraph" "codegraph"
+  unset -f command_exists npm
+  assert_equals "@colbymchenry/codegraph" "$(_artifacts | jq -r '.[0].id')"
+}
+
+test_require_go_records_the_installed_binary_path() {
+  _state_setup; trap _state_teardown RETURN
+  local GOBIN="$_tmpdir/gobin"
+  command_exists() { return 1; }
+  go() { return 0; }
+  export -f command_exists go
+  require_go "github.com/example/tool/cmd/tool@v1.2.3"
+  unset -f command_exists go
+  assert_equals '{"kind":"path","id":"'"$GOBIN"'/tool","owned":true}' "$(_artifacts | jq -c '.[0]')"
+}
+
+test_require_script_records_nothing() {
+  _state_setup; trap _state_teardown RETURN
+  curl() { echo ':'; }
+  export -f curl
+  require_script "https://example.com/install.sh"
+  unset -f curl
+  assert_equals "[]" "$(_artifacts)"
+}
+
+# ── artifact removal ──
+
+test_pkg_remove_artifact_uninstalls_brew_formula() {
+  local action=""
+  command_exists() { return 0; }
+  brew() { action="$*"; }
+  export -f command_exists brew
+  pkg_remove_artifact brew "some-pkg"
+  unset -f command_exists brew
+  assert_equals "uninstall some-pkg" "$action"
+}
+
+test_pkg_remove_artifact_uninstalls_brew_cask() {
+  local action=""
+  command_exists() { return 0; }
+  brew() { action="$*"; }
+  export -f command_exists brew
+  pkg_remove_artifact brew_cask "some-cask"
+  unset -f command_exists brew
+  assert_equals "uninstall --cask some-cask" "$action"
+}
+
+test_pkg_remove_artifact_skips_brew_when_brew_is_gone() {
+  local action=""
+  command_exists() { return 1; }
+  brew() { action="$*"; }
+  export -f command_exists brew
+  pkg_remove_artifact brew "some-pkg"
+  unset -f command_exists brew
+  assert_equals "" "$action"
+}
+
+test_pkg_remove_artifact_removes_apt_package() {
+  local action=""
+  dpkg() { return 0; }
+  sudo() { shift; action="$*"; }
+  export -f dpkg sudo
+  pkg_remove_artifact apt "some-pkg"
+  unset -f dpkg sudo
+  assert_equals "remove -y some-pkg" "$action"
+}
+
+test_pkg_remove_artifact_skips_apt_package_that_is_not_installed() {
+  local action=""
+  dpkg() { return 1; }
+  sudo() { shift; action="$*"; }
+  export -f dpkg sudo
+  pkg_remove_artifact apt "some-pkg"
+  unset -f dpkg sudo
+  assert_equals "" "$action"
+}
+
+test_pkg_remove_artifact_removes_pacman_package() {
+  local action=""
+  pacman() { return 0; }
+  sudo() { shift; action="$*"; }
+  export -f pacman sudo
+  pkg_remove_artifact pacman "some-pkg"
+  unset -f pacman sudo
+  assert_equals "-Rs --noconfirm some-pkg" "$action"
+}
+
+test_pkg_remove_artifact_uninstalls_npm_package() {
+  local action=""
+  npm() { action="$*"; }
+  export -f npm
+  pkg_remove_artifact npm "@scope/pkg"
+  unset -f npm
+  assert_equals "uninstall -g @scope/pkg" "$action"
+}
+
+test_pkg_remove_artifact_uninstalls_cargo_crate() {
+  local action=""
+  cargo() { action="$*"; }
+  export -f cargo
+  pkg_remove_artifact cargo "ripgrep"
+  unset -f cargo
+  assert_equals "uninstall ripgrep" "$action"
+}
+
+test_pkg_remove_artifact_uninstalls_pip_package() {
+  local action=""
+  pip3() { action="$*"; }
+  export -f pip3
+  pkg_remove_artifact pip "somepkg"
+  unset -f pip3
+  assert_equals "uninstall -y somepkg" "$action"
+}
+
+test_pkg_remove_artifact_removes_a_path() {
+  local tmp
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' RETURN
+  mkdir -p "$tmp/tree/nested"
+  pkg_remove_artifact path "$tmp/tree"
+  assert_not_exists "$tmp/tree"
+}
+
+test_pkg_remove_artifact_ignores_an_already_gone_path() {
+  local tmp
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' RETURN
+  assert_retval 0 pkg_remove_artifact path "$tmp/never-existed"
+}
+
+test_pkg_remove_artifact_refuses_a_relative_path() {
+  assert_retval 1 pkg_remove_artifact path "some/relative/dir"
+}
+
+test_pkg_remove_artifact_refuses_an_empty_path() {
+  assert_retval 1 pkg_remove_artifact path ""
+}
+
+test_pkg_remove_artifact_refuses_the_root_path() {
+  assert_retval 1 pkg_remove_artifact path "/"
+}
+
+test_pkg_remove_artifact_removes_a_root_path_with_sudo() {
+  local tmp action=""
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' RETURN
+  mkdir -p "$tmp/tree"
+  sudo() { action="$*"; }
+  export -f sudo
+  pkg_remove_artifact root_path "$tmp/tree"
+  unset -f sudo
+  assert_equals "rm -rf $tmp/tree" "$action"
+}
+
+test_pkg_remove_artifact_rejects_an_unknown_kind() {
+  assert_retval 1 pkg_remove_artifact "telepathy" "some-pkg"
 }
 
 run_tests

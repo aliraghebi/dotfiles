@@ -28,12 +28,13 @@ export PATH="$HOME/.local/bin:$PATH"
 ```
 dotfiles <command> [app]
 
-  install <app>   Install and configure an app
-  config  <app>   Configure an app (must already be installed)
-  upgrade [app]   Upgrade an app to the latest version (no app = all configured)
-  remove  <app>   Remove an app's config links
-  update          Pull latest dotfiles from git
-  list            List all apps and their status
+  install   <app>   Install and configure an app
+  config    <app>   Configure an app (must already be installed)
+  upgrade   [app]   Upgrade an app to the latest version (no app = all configured)
+  remove    <app>   Remove an app's config links
+  uninstall <app>   Remove an app's config links and uninstall its software
+  update            Pull latest dotfiles from git
+  list              List all apps and their status
 ```
 
 ### Examples
@@ -45,12 +46,35 @@ dotfiles config zsh        # re-apply config links for zsh
 dotfiles upgrade neovim    # upgrade neovim, prompting per dependency
 dotfiles upgrade           # upgrade every configured app
 dotfiles remove kitty      # remove symlinks, restore any backups
+dotfiles uninstall btop    # remove symlinks and uninstall btop itself
 dotfiles update            # git pull latest
 ```
 
 `upgrade` touches software only — it never re-links configs or runs `config.sh`.
-For each entry in the app's `APP_DEPS` it asks `[y/N/a]` before upgrading that
-dependency too.
+For each entry in the app's `APP_DEPS` it asks `[Y/n/a]` before upgrading that
+dependency too (empty answer = yes).
+
+`uninstall` is `remove` plus the software itself. Installing records every
+package, binary and directory it puts on the machine as an *artifact* in the
+state file; uninstall prints that list, asks `[y/N]`, then reverses it
+newest-first. `install.sh` is never re-run, so install code can never execute
+while something is being removed.
+
+```
+[ Uninstalling fonts ]
+  → Will remove:
+      brew_cask  font-jetbrains-mono
+      apt        fonts-firacode   (present before dotfiles)
+      path       /home/me/.local/share/fonts/JetBrainsMono
+  ! Still depended on by: neovide
+  Uninstall 'fonts' — remove its config links and everything above? [y/N]
+```
+
+Artifacts flagged *present before dotfiles* were already installed when this
+tool first saw them; they are still listed and still removed, so the prompt
+shows you exactly what you are agreeing to. Apps configured before artifact
+tracking existed have no records — `uninstall` says so and removes only the
+config links. Re-run `dotfiles install <app>` to record them.
 
 ## Apps
 
@@ -84,11 +108,17 @@ Each app lives under `apps/<name>/` and can have:
 
 - `meta.sh` — metadata: name, binary, OS support, config file mappings, dependencies
 - `install.sh` — package install (via `brew`, `apt`, `pacman`, or a custom function)
+- `upgrade.sh` — overrides individual `install.sh` steps on `dotfiles upgrade`
+- `uninstall.sh` — extra cleanup on `dotfiles uninstall`, before the software goes
 - `config.sh` — post-link setup script (idempotent)
-- `remove.sh` — cleanup script run on `dotfiles remove`
+- `remove.sh` — cleanup script run on `dotfiles remove` / `uninstall`
 - `config/` — files that get symlinked into `$HOME`
 
 On `install` or `config`, the manager reconciles symlinks: it creates new links, removes stale ones, and backs up any files that were in the way. On `remove`, it unlinks everything and restores those backups.
+
+Installs record their artifacts (`brew`, `apt`, `npm`, a path, …) in the same
+state file, which is what makes `uninstall` reversible without re-running any
+install code.
 
 State is tracked in a JSON file:
 - macOS: `~/Library/Application Support/dotfiles/state.json`
@@ -100,6 +130,8 @@ State is tracked in a JSON file:
 apps/<name>/
   meta.sh        # required
   install.sh     # optional
+  upgrade.sh     # optional
+  uninstall.sh   # optional
   config.sh      # optional
   remove.sh      # optional
   config/        # optional — mirrors $HOME structure
