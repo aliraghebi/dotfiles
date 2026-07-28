@@ -31,12 +31,6 @@ defaults write NSGlobalDomain NSNavPanelExpandedStateForSaveMode2 -bool true
 defaults write NSGlobalDomain KeyRepeat -int 2
 defaults write NSGlobalDomain InitialKeyRepeat -int 15
 
-# Cmd+H / Cmd+L to move between Spaces
-defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 79 \
-    "<dict><key>enabled</key><true/><key>value</key><dict><key>type</key><string>standard</string><key>parameters</key><array><integer>104</integer><integer>4</integer><integer>1048576</integer></array></dict></dict>"
-defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 81 \
-    "<dict><key>enabled</key><true/><key>value</key><dict><key>type</key><string>standard</string><key>parameters</key><array><integer>108</integer><integer>37</integer><integer>1048576</integer></array></dict></dict>"
-
 # Disable Ctrl+Space input source switching (conflicts with tmux)
 /usr/libexec/PlistBuddy ~/Library/Preferences/com.apple.symbolichotkeys.plist \
     -c "Set AppleSymbolicHotKeys:60:enabled false" 2>/dev/null || true
