@@ -30,7 +30,7 @@ macos-option-as-alt = true
 
 # --- Behaviour ---
 copy-on-select = clipboard
-confirm-close-surface = false
+confirm-close-surface = true
 mouse-hide-while-typing = true
 scrollback-limit = 100000
 
