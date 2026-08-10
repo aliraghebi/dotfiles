@@ -39,3 +39,7 @@
 
 [push]
 	autoSetupRemote = true
+
+[alias]
+	# delete local branches already merged into HEAD, keeping the long-lived ones
+	cleanup = "!f() { cur=$(git rev-parse --abbrev-ref HEAD); b=$(git branch --format='%(refname:short)' --merged HEAD | grep -vxE \"main|master|dev|develop|$cur\"); [ -z \"$b\" ] && { echo 'nothing to delete'; return 0; }; echo \"$b\" | xargs -n1 git branch -d; }; f"

@@ -95,6 +95,7 @@ config links. Re-run `dotfiles install <app>` to record them.
 | macos | macOS | macOS system defaults |
 | neovide | macOS | GPU-accelerated GUI frontend for Neovim |
 | neovim | macOS, Linux | Hyperextensible Vim-based text editor |
+| raycast | macOS | Raycast launcher — app search, window management, script commands |
 | slack | macOS | Slack desktop application |
 | starship | macOS, Linux | Cross-shell prompt |
 | tmux | macOS, Linux | Terminal multiplexer |

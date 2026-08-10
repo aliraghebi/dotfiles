@@ -47,5 +47,6 @@
   "tui": "default",
   "autoMemoryEnabled": false,
   "theme": "dark-ansi",
-  "agentPushNotifEnabled": true
+  "agentPushNotifEnabled": true,
+  "model": "opus"
 }
