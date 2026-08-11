@@ -3,16 +3,36 @@
 [core]
   excludesfile = ~/.config/git/ignore
   editor = nvim
+  ; Pick by availability, not exit status: `delta || less` would re-page on a
+  ; nonzero exit (e.g. quitting delta) with stdin already consumed.
+  ; Quoted because an unquoted `;` starts a comment in gitconfig.
+  pager = "if command -v delta >/dev/null 2>&1; then delta; else ${PAGER:-less}; fi"
 
 [pull]
   rebase = true
 
-[credential]
-  helper = cache
+[interactive]
+  diffFilter = "if command -v delta >/dev/null 2>&1; then delta --color-only; else cat; fi"
+
+[delta]
+  navigate = true
+
+[diff]
+  algorithm = histogram
+  colorMoved = default
 
 [merge]
   tool = vimdiff
-  # conflictstyle = diff3
+  conflictstyle = zdiff3
+
+[rerere]
+  enabled = true
+
+[branch]
+  sort = -committerdate
+
+[column]
+  ui = auto
 
 [mergetool]
   prompt = true
@@ -43,3 +63,8 @@
 [alias]
 	# delete local branches already merged into HEAD, keeping the long-lived ones
 	cleanup = "!f() { cur=$(git rev-parse --abbrev-ref HEAD); b=$(git branch --format='%(refname:short)' --merged HEAD | grep -vxE \"main|master|dev|develop|$cur\"); [ -z \"$b\" ] && { echo 'nothing to delete'; return 0; }; echo \"$b\" | xargs -n1 git branch -d; }; f"
+
+; Machine-local settings (credential helper, signing keys) — never tracked.
+; Last in the file so it overrides everything above. Missing file is ignored.
+[include]
+	path = ~/.config/git/config.local

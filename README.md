@@ -83,24 +83,30 @@ config links. Re-run `dotfiles install <app>` to record them.
 | brew | macOS | Homebrew package manager |
 | btop | macOS, Linux | Resource monitor — CPU, memory, disks, network, processes |
 | chrome | macOS, Linux | Google Chrome web browser |
+| delta | macOS, Linux | delta — syntax-highlighting pager for git, diff and grep |
 | docker | macOS, Linux | Docker container platform |
 | fonts | macOS, Linux | System fonts — JetBrains Mono, Fira Code, Nerd Fonts, Vazirmatn |
 | git | macOS, Linux | Git version control |
 | go | macOS, Linux | Go programming language and toolchain |
 | gopass | macOS, Linux | Password manager backed by git |
 | gpg | macOS, Linux | GNU Privacy Guard |
+| just | macOS, Linux | just — command runner for project-specific recipes |
 | k9s | macOS, Linux | Kubernetes CLI dashboard |
 | keys | macOS, Linux | Add SSH public keys from GitHub to authorized_keys |
 | kitty | macOS | GPU-accelerated terminal emulator |
 | macos | macOS | macOS system defaults |
+| mise | macOS, Linux | mise — polyglot runtime and tool version manager |
+| mole | macOS | Mac cleanup, app uninstaller, disk analyzer and monitor |
 | neovide | macOS | GPU-accelerated GUI frontend for Neovim |
 | neovim | macOS, Linux | Hyperextensible Vim-based text editor |
+| orbstack | macOS | OrbStack — fast Docker and Linux VMs, Docker Desktop replacement |
 | raycast | macOS | Raycast launcher — app search, window management, script commands |
 | slack | macOS | Slack desktop application |
 | starship | macOS, Linux | Cross-shell prompt |
 | tmux | macOS, Linux | Terminal multiplexer |
 | vim | macOS, Linux | Vi IMproved text editor |
 | wakatime | macOS, Linux | WakaTime coding activity tracker |
+| xh | macOS, Linux | xh — friendly and fast tool for sending HTTP requests |
 | zsh | macOS, Linux | Z shell |
 
 ## How it works

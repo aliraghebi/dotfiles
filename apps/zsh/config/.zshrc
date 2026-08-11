@@ -20,6 +20,7 @@ export TERM
 [[ -d "$HOME/bin" ]] && path+=("$HOME/bin")
 [[ -d "$HOME/.local/bin" ]] && path+=("$HOME/.local/bin")
 [[ -d "$HOME/.cargo/bin" ]] && path+=("$HOME/.cargo/bin")
+[[ -d "$HOME/.orbstack/bin" ]] && path+=("$HOME/.orbstack/bin")
 
 # Oh My Zsh
 export ZSH="${ZSH:-$HOME/.oh-my-zsh}"
@@ -60,9 +61,20 @@ if command -v pyenv >/dev/null 2>&1 && [[ -z "$VIRTUAL_ENV" ]]; then
   eval "$(pyenv init -)"
 fi
 
+# mise — activate last so it wins for the tools it manages, and stays out of the
+# way for the ones it does not. Inert until a project declares them.
+if command -v mise >/dev/null 2>&1; then
+  eval "$(mise activate zsh)"
+fi
+
 # Cloud / Kubernetes
 export AWS_VAULT_BACKEND=file
-[[ -f "$HOME/.kube/k3s.yaml" ]] && export KUBECONFIG="$HOME/.kube/k3s.yaml"
+
+# Merge every cluster we know about — OrbStack writes its context to ~/.kube/config,
+# which a bare KUBECONFIG pointing at k3s.yaml would hide.
+[[ -f "$HOME/.kube/config" ]] && KUBECONFIG="$HOME/.kube/config"
+[[ -f "$HOME/.kube/k3s.yaml" ]] && KUBECONFIG="${KUBECONFIG:+$KUBECONFIG:}$HOME/.kube/k3s.yaml"
+[[ -n "$KUBECONFIG" ]] && export KUBECONFIG
 
 if command -v k9s >/dev/null 2>&1; then
   export K9S_CONFIG_DIR="$HOME/.config/k9s"
